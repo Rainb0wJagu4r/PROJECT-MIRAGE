@@ -3,6 +3,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
 import { execSync } from 'child_process';
 import os from 'os';
 
@@ -894,13 +895,47 @@ app.post('/api/decrypt', async (req, res) => {
 
 // Start Express Server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`========================================`);
-    console.log(`Project Mirage Local API Server online!`);
-    console.log(`Listening on http://localhost:${PORT}`);
-    console.log(`Platform UUID: ${getHardwareUUID()}`);
-    console.log(`========================================`);
-  });
+  try {
+    const certPath = path.join(process.cwd(), 'certs', 'localhost.pem');
+    const keyPath = path.join(process.cwd(), 'certs', 'localhost-key.pem');
+    
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      const options = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+        // Enable Hybrid Post-Quantum Key Exchange if supported by Node/OpenSSL
+        minVersion: 'TLSv1.3',
+        ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256',
+        ecdhCurve: 'X25519Kyber768Draft00:secp256r1_kyber768:x25519:secp256r1'
+      };
+      
+      const server = https.createServer(options, app);
+      server.listen(PORT, () => {
+        console.log(`========================================`);
+        console.log(`Project Mirage Local API Server online (HTTPS)!`);
+        console.log(`Listening on https://localhost:${PORT}`);
+        console.log(`Platform UUID: ${getHardwareUUID()}`);
+        console.log(`========================================`);
+      });
+    } else {
+      app.listen(PORT, () => {
+        console.log(`========================================`);
+        console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
+        console.log(`Listening on http://localhost:${PORT}`);
+        console.log(`Platform UUID: ${getHardwareUUID()}`);
+        console.log(`========================================`);
+      });
+    }
+  } catch (err) {
+    console.error('Failed to start HTTPS server, falling back to HTTP:', err);
+    app.listen(PORT, () => {
+      console.log(`========================================`);
+      console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
+      console.log(`Listening on http://localhost:${PORT}`);
+      console.log(`Platform UUID: ${getHardwareUUID()}`);
+      console.log(`========================================`);
+    });
+  }
 }
 
 // Export helpers for testing
