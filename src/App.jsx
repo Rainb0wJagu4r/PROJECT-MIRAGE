@@ -230,6 +230,15 @@ export default function App() {
       .catch(err => console.error('Failed to load system info:', err));
   }, []);
 
+  // Handle body theme class toggle
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.classList.remove('light-theme');
+    } else {
+      document.body.classList.add('light-theme');
+    }
+  }, [isDarkMode]);
+
   // Form State: Encrypt
   const [encFile, setEncFile] = useState(null);
   const [encLocalPath, setEncLocalPath] = useState('');
@@ -569,7 +578,7 @@ export default function App() {
   };
 
   return (
-    <div className={`app-container ${isDarkMode ? '' : 'light-theme'}`}>
+    <div className="app-container">
       {/* Settings / Controls Bar */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '-10px', zIndex: 10 }}>
         <button 
