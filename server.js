@@ -893,49 +893,96 @@ app.post('/api/decrypt', async (req, res) => {
   }
 });
 
-// Start Express Server
-if (process.env.NODE_ENV !== 'test') {
-  try {
-    const certPath = path.join(process.cwd(), 'certs', 'localhost.pem');
-    const keyPath = path.join(process.cwd(), 'certs', 'localhost-key.pem');
-    
-    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      const options = {
-        key: fs.readFileSync(keyPath),
-        cert: fs.readFileSync(certPath),
-        // Enable Hybrid Post-Quantum Key Exchange if supported by Node/OpenSSL
-        minVersion: 'TLSv1.3',
-        ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256',
-        ecdhCurve: 'X25519Kyber768Draft00:secp256r1_kyber768:x25519:secp256r1'
-      };
+// Serve Static Frontend files in Production
+const distPath = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api/')) {
+      res.sendFile(path.join(distPath, 'index.html'));
+    }
+  });
+}
+
+let serverInstance;
+
+function startServer(port = PORT) {
+  return new Promise((resolve) => {
+    try {
+      const certPath = path.join(process.cwd(), 'certs', 'localhost.pem');
+      const keyPath = path.join(process.cwd(), 'certs', 'localhost-key.pem');
       
-      const server = https.createServer(options, app);
-      server.listen(PORT, () => {
-        console.log(`========================================`);
-        console.log(`Project Mirage Local API Server online (HTTPS)!`);
-        console.log(`Listening on https://localhost:${PORT}`);
-        console.log(`Platform UUID: ${getHardwareUUID()}`);
-        console.log(`========================================`);
-      });
-    } else {
-      app.listen(PORT, () => {
+      if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+        const availableCurves = crypto.getCurves ? crypto.getCurves() : [];
+        const desiredCurves = ['X25519Kyber768Draft00', 'secp256r1_kyber768', 'x25519', 'secp256r1'];
+        const supportedCurves = desiredCurves.filter(c => availableCurves.includes(c));
+        
+        const options = {
+          key: fs.readFileSync(keyPath),
+          cert: fs.readFileSync(certPath),
+          minVersion: 'TLSv1.3',
+          ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256'
+        };
+        
+        if (supportedCurves.length > 0) {
+          options.ecdhCurve = supportedCurves.join(':');
+        } else {
+          options.ecdhCurve = 'auto';
+        }
+        
+        serverInstance = https.createServer(options, app);
+        serverInstance.listen(port, () => {
+          console.log(`========================================`);
+          console.log(`Project Mirage Local API Server online (HTTPS)!`);
+          console.log(`Listening on https://localhost:${port}`);
+          console.log(`Platform UUID: ${getHardwareUUID()}`);
+          if (supportedCurves.some(c => c.toLowerCase().includes('kyber'))) {
+            console.log(`Post-Quantum Cryptography: Enabled (hybrid key agreement active)`);
+          } else {
+            console.log(`Post-Quantum Cryptography: Fallback active (standard ECC)`);
+          }
+          console.log(`========================================`);
+          resolve(serverInstance);
+        });
+      } else {
+        serverInstance = app.listen(port, () => {
+          console.log(`========================================`);
+          console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
+          console.log(`Listening on http://localhost:${port}`);
+          console.log(`Platform UUID: ${getHardwareUUID()}`);
+          console.log(`========================================`);
+          resolve(serverInstance);
+        });
+      }
+    } catch (err) {
+      console.error('Failed to start HTTPS server, falling back to HTTP:', err);
+      serverInstance = app.listen(port, () => {
         console.log(`========================================`);
         console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
-        console.log(`Listening on http://localhost:${PORT}`);
+        console.log(`Listening on http://localhost:${port}`);
         console.log(`Platform UUID: ${getHardwareUUID()}`);
         console.log(`========================================`);
+        resolve(serverInstance);
       });
     }
-  } catch (err) {
-    console.error('Failed to start HTTPS server, falling back to HTTP:', err);
-    app.listen(PORT, () => {
-      console.log(`========================================`);
-      console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
-      console.log(`Listening on http://localhost:${PORT}`);
-      console.log(`Platform UUID: ${getHardwareUUID()}`);
-      console.log(`========================================`);
-    });
+  });
+}
+
+function stopServer() {
+  if (serverInstance) {
+    serverInstance.close();
+    console.log('[Security] Local API Server stopped.');
   }
+}
+
+// Start Express Server automatically if run directly
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith('server.js') || 
+  process.argv[1].endsWith('test-crypto.js')
+);
+
+if (process.env.NODE_ENV !== 'test' && isDirectRun) {
+  startServer(PORT);
 }
 
 // Export helpers for testing
@@ -947,6 +994,8 @@ export {
   deriveKey,
   applySizePadding,
   serializePayload,
-  deserializePayload
+  deserializePayload,
+  startServer,
+  stopServer
 };
 
