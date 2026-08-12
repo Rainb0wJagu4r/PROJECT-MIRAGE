@@ -47,9 +47,13 @@ project-mirage/
 ### Installation
 
 1. Navigate to the project directory:
-   ```cd /Users/brx/.gemini/antigravity/scratch/cipher-armor```
+   ```bash
+   cd project-mirage
+   ```
 2. Install the package dependencies:
-   ```npm install```
+   ```bash
+   npm install
+   ```
 
 ### Execution
 
@@ -70,3 +74,8 @@ To verify the integrity of the cryptographic operations, run the automated test 
 ```bash
 node test-crypto.js
 ```
+
+## Security Note on Time-to-Live (TTL)
+
+The Time-to-Live (TTL) feature operates as an application-level filter. Because decryption keys are derived locally and the system runs offline on loopback localhost without a centralized key management server, the TTL restriction is a logic filter rather than a mathematical block. A user who makes a physical copy of the `.wraith` archive from the disk before the expiration timestamp occurs can preserve the original encrypted payload and bypass the application-level self-destruction routine.
+

@@ -9,10 +9,34 @@ import os from 'os';
 const app = express();
 const PORT = 3001;
 
+// Generate runtime API token and write it to local JSON file
+const API_TOKEN = crypto.randomBytes(32).toString('hex');
+try {
+  const tokenPath = path.join(process.cwd(), 'src', 'token.json');
+  fs.writeFileSync(tokenPath, JSON.stringify({ token: API_TOKEN }, null, 2));
+  console.log(`[Security] API Token generated and written to ${tokenPath}`);
+} catch (err) {
+  console.error('[Security] Failed to write API Token to disk:', err);
+}
+
 // Middlewares
-app.use(cors());
+const corsOptions = {
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '200mb' }));
+
+// Token authorization middleware
+const authenticateToken = (req, res, next) => {
+  const clientToken = req.headers['x-api-token'];
+  if (!clientToken || clientToken !== API_TOKEN) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing API Token.' });
+  }
+  next();
+};
+app.use('/api', authenticateToken);
 
 // Helper to get platform UUID on macOS (with cross-platform fallback)
 function getHardwareUUID() {
@@ -428,7 +452,9 @@ app.post('/api/encrypt', async (req, res) => {
       if (!duressPassword) {
         throw new Error('Duress Mode Error: Decoy password required');
       }
-      if (duressPassword === password) {
+      const hashedDuress = crypto.createHash('sha256').update(duressPassword).digest();
+      const hashedPassword = crypto.createHash('sha256').update(password).digest();
+      if (crypto.timingSafeEqual(hashedDuress, hashedPassword)) {
         throw new Error('Duress Mode Error: Decoy password must be different from primary password');
       }
 
@@ -563,12 +589,7 @@ app.post('/api/encrypt', async (req, res) => {
     }
 
     // Calculate Hash Output
-    let finalSha3;
-    if (splitFragmentEnabled) {
-      finalSha3 = crypto.createHash('sha3-256').update(outputBuffer).digest('hex');
-    } else {
-      finalSha3 = crypto.createHash('sha3-256').update(outputBuffer).digest('hex');
-    }
+    const finalSha3 = crypto.createHash('sha3-256').update(outputBuffer).digest('hex');
     addStep(`Output SHA3-256 (.wraith): ${finalSha3}`);
 
     // Step 7: Secure Shredding of original file

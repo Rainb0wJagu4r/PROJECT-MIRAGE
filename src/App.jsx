@@ -21,6 +21,7 @@ import Dropzone from './components/Dropzone';
 import AdvancedOptions from './components/AdvancedOptions';
 import PathInput from './components/PathInput';
 import ProcessingOverlay from './components/ProcessingOverlay';
+import tokenData from './token.json';
 
 // Translations Dictionary
 const translations = {
@@ -221,7 +222,9 @@ export default function App() {
 
   // Load system info on startup
   useEffect(() => {
-    fetch('/api/system-info')
+    fetch('/api/system-info', {
+      headers: { 'X-API-Token': tokenData.token }
+    })
       .then(res => res.json())
       .then(data => setSystemInfo(data))
       .catch(err => console.error('Failed to load system info:', err));
@@ -281,7 +284,9 @@ export default function App() {
     }
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/file-info?path=${encodeURIComponent(encLocalPath)}`);
+        const response = await fetch(`/api/file-info?path=${encodeURIComponent(encLocalPath)}`, {
+          headers: { 'X-API-Token': tokenData.token }
+        });
         const data = await response.json();
         if (data && data.exists && data.hash) {
           setEncInputHash(data.hash);
@@ -303,7 +308,9 @@ export default function App() {
     }
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/file-info?path=${encodeURIComponent(decFilePath)}`);
+        const response = await fetch(`/api/file-info?path=${encodeURIComponent(decFilePath)}`, {
+          headers: { 'X-API-Token': tokenData.token }
+        });
         const data = await response.json();
         if (data && data.exists && data.hash) {
           setDecInputHash(data.hash);
@@ -364,7 +371,8 @@ export default function App() {
         const headers = {
           'Content-Type': 'application/octet-stream',
           'X-File-Name': encodeURIComponent(encFile.name),
-          'X-Settings': JSON.stringify(settingsPayload)
+          'X-Settings': JSON.stringify(settingsPayload),
+          'X-API-Token': tokenData.token
         };
 
         response = await fetch('/api/encrypt', {
@@ -381,7 +389,10 @@ export default function App() {
         
         response = await fetch('/api/encrypt', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-API-Token': tokenData.token
+          },
           body: JSON.stringify({
             filePath: encLocalPath,
             settings: {
@@ -468,7 +479,10 @@ export default function App() {
 
       const response = await fetch('/api/decrypt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-API-Token': tokenData.token
+        },
         body: JSON.stringify(payload)
       });
 
@@ -1184,7 +1198,7 @@ export default function App() {
 
       {/* Footer */}
       <footer style={{ marginTop: 'auto', paddingTop: '40px', paddingBottom: '20px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-dark)', fontFamily: 'var(--font-outfit)', letterSpacing: '0.5px' }}>
-        Made with ♥️ by MDVsecutiry from 🇲🇽
+        Made with ♥️ by MDVsecurity from 🇲🇽
       </footer>
     </div>
   );

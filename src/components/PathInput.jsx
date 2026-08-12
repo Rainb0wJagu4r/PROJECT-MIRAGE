@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Folder, File, HelpCircle } from 'lucide-react';
+import tokenData from '../token.json';
 
 export default function PathInput({ 
   value, 
@@ -18,7 +19,9 @@ export default function PathInput({
 
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/autocomplete?path=${encodeURIComponent(value || '')}`);
+        const response = await fetch(`/api/autocomplete?path=${encodeURIComponent(value || '')}`, {
+          headers: { 'X-API-Token': tokenData.token }
+        });
         const data = await response.json();
         if (data && data.items) {
           setSuggestions(data.items);
@@ -36,15 +39,13 @@ export default function PathInput({
   // Handle outside clicks to close suggestion box
   useEffect(() => {
     const handleOutsideClick = (e) => {
-      if (containerRef.current && !containerRefRef.current.contains(e.target)) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
         setShowSuggestions(false);
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
-
-  const containerRefRef = containerRef; // align reference name
 
   const handleSuggestionClick = (item) => {
     onChange(item.path + (item.isDirectory ? '/' : ''));
