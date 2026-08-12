@@ -4,5 +4,7 @@ dist
 *.local
 src/token.json
 certs/
+release/
+
 
 
