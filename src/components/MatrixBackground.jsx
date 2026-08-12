@@ -8,6 +8,7 @@ export default function MatrixBackground({ isDarkMode }) {
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     let animationFrameId;
     let isPaused = false;
     
@@ -61,7 +62,7 @@ export default function MatrixBackground({ isDarkMode }) {
       ctx.fillStyle = colors.fadeFill;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.font = `600 ${fontSize}px var(--font-mono)`;
+      ctx.font = `600 ${fontSize}px "Fira Code", monospace`;
 
       // Loop over drops
       for (let i = 0; i < drops.length; i++) {
@@ -93,30 +94,41 @@ export default function MatrixBackground({ isDarkMode }) {
       }
     };
 
+    const startLoop = () => {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = requestAnimationFrame(draw);
+    };
+
+    const stopLoop = () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+
     // Start loop
-    animationFrameId = requestAnimationFrame(draw);
+    startLoop();
 
     // Visibility and Focus tracking to reduce RAM/CPU when backgrounded
     const handleVisibilityChange = () => {
       if (document.hidden) {
         isPaused = true;
-        cancelAnimationFrame(animationFrameId);
+        stopLoop();
       } else {
         isPaused = false;
         lastTime = performance.now();
-        animationFrameId = requestAnimationFrame(draw);
+        startLoop();
       }
     };
 
     const handleFocus = () => {
-      isPaused = false;
-      lastTime = performance.now();
-      animationFrameId = requestAnimationFrame(draw);
+      if (isPaused) {
+        isPaused = false;
+        lastTime = performance.now();
+        startLoop();
+      }
     };
 
     const handleBlur = () => {
       isPaused = true;
-      cancelAnimationFrame(animationFrameId);
+      stopLoop();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);

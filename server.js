@@ -6,6 +6,10 @@ import path from 'path';
 import https from 'https';
 import { execSync } from 'child_process';
 import os from 'os';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3001;
@@ -13,7 +17,7 @@ const PORT = 3001;
 // Generate runtime API token and write it to local JSON file
 const API_TOKEN = crypto.randomBytes(32).toString('hex');
 try {
-  const tokenPath = path.join(process.cwd(), 'src', 'token.json');
+  const tokenPath = path.join(__dirname, 'src', 'token.json');
   fs.writeFileSync(tokenPath, JSON.stringify({ token: API_TOKEN }, null, 2));
   console.log(`[Security] API Token generated and written to ${tokenPath}`);
 } catch (err) {
@@ -894,7 +898,7 @@ app.post('/api/decrypt', async (req, res) => {
 });
 
 // Serve Static Frontend files in Production
-const distPath = path.join(process.cwd(), 'dist');
+const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.get('*', (req, res) => {
@@ -909,8 +913,8 @@ let serverInstance;
 function startServer(port = PORT) {
   return new Promise((resolve) => {
     try {
-      const certPath = path.join(process.cwd(), 'certs', 'localhost.pem');
-      const keyPath = path.join(process.cwd(), 'certs', 'localhost-key.pem');
+      const certPath = path.join(__dirname, 'certs', 'localhost.pem');
+      const keyPath = path.join(__dirname, 'certs', 'localhost-key.pem');
       
       if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
         const availableCurves = crypto.getCurves ? crypto.getCurves() : [];

@@ -1,7 +1,11 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { startServer, stopServer } from './server.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let mainWindow;
 
@@ -30,8 +34,8 @@ async function createWindow() {
     // mainWindow.webContents.openDevTools();
   } else {
     // In production, we load from our local Express server over HTTPS (or HTTP if fallback)
-    const certPath = path.join(process.cwd(), 'certs', 'localhost.pem');
-    const keyPath = path.join(process.cwd(), 'certs', 'localhost-key.pem');
+    const certPath = path.join(__dirname, 'certs', 'localhost.pem');
+    const keyPath = path.join(__dirname, 'certs', 'localhost-key.pem');
     const hasSSL = fs.existsSync(certPath) && fs.existsSync(keyPath);
     const protocol = hasSSL ? 'https' : 'http';
     mainWindow.loadURL(`${protocol}://localhost:3001`);
