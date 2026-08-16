@@ -5,6 +5,8 @@
   "type": "module",
   "main": "main.js",
   "scripts": {
+    "predev": "node scripts/check-updates.js",
+    "preapp:dev": "node scripts/check-updates.js",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "client": "vite",
     "server": "node server.js",
