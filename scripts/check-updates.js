@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import dns from 'dns';
 
 console.log('🔍 Checking Project Mirage dependencies...');
@@ -29,21 +29,48 @@ dns.lookup('registry.npmjs.org', (err) => {
       process.exit(0);
     }
 
-    console.log('\n📋 Outdated Libraries Checklist:');
-    console.log('========================================');
-    
+    const safeUpdates = [];
+    const majorUpdates = [];
+
     keys.forEach((pkg) => {
       const info = outdated[pkg];
-      const isMajor = info.current.split('.')[0] !== info.latest.split('.')[0];
-      const typeLabel = isMajor ? '⚠️ MAJOR UPDATE' : '✨ minor/patch';
-      console.log(`[ ] ${pkg.padEnd(20)} | Current: ${info.current.padEnd(8)} | Latest: ${info.latest.padEnd(8)} | (${typeLabel})`);
+      const currentMajor = info.current ? info.current.split('.')[0] : '0';
+      const latestMajor = info.latest ? info.latest.split('.')[0] : '0';
+      const isMajor = currentMajor !== latestMajor;
+
+      if (isMajor) {
+        majorUpdates.push({ pkg, ...info });
+      } else {
+        safeUpdates.push({ pkg, ...info });
+      }
     });
 
-    console.log('========================================');
-    console.log('👉 To update packages to the wanted versions, run:');
-    console.log('   npm update');
-    console.log('👉 To upgrade packages to their latest versions, run:');
-    console.log('   npm install <package-name>@latest\n');
+    // 3. Perform automatic safe minor/patch updates
+    if (safeUpdates.length > 0) {
+      console.log(`\n✨ Safe minor/patch updates detected for ${safeUpdates.length} libraries.`);
+      console.log('📦 Running auto-updater (npm update) to update them safely...');
+      try {
+        execSync('npm update', { stdio: 'inherit' });
+        console.log('✅ Safe updates applied successfully!\n');
+      } catch (updateError) {
+        console.error('⚠️ Auto-update execution failed:', updateError.message);
+      }
+    }
+
+    // 4. Report major updates that require manual action (since they are breaking)
+    if (majorUpdates.length > 0) {
+      console.log('\n📋 Major updates available (skipped to prevent breaking changes):');
+      console.log('========================================');
+      majorUpdates.forEach((item) => {
+        console.log(`[ ] ${item.pkg.padEnd(20)} | Current: ${item.current.padEnd(8)} | Latest: ${item.latest.padEnd(8)} | (⚠️ MAJOR UPDATE)`);
+      });
+      console.log('========================================');
+      console.log('👉 To install major updates manually, run:');
+      console.log('   npm install <package-name>@latest\n');
+    } else if (safeUpdates.length === 0) {
+      console.log('✅ All package dependencies are up to date!\n');
+    }
+
     process.exit(0);
   });
 });
