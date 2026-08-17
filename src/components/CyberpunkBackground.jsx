@@ -29,6 +29,36 @@ export default function CyberpunkBackground({ isDarkMode }) {
     let gridOffset = 0;
     let laserY = 0;
     let rotationAngle = 0;
+    
+    // Hex streams variables
+    const hexLinesCount = 20;
+    const leftHexLines = Array(hexLinesCount).fill(0).map(() => generateHexLine());
+    const rightHexLines = Array(hexLinesCount).fill(0).map(() => generateHexLine());
+    let hexScrollTimer = 0;
+
+    function generateHexLine() {
+      const addr = Math.floor(Math.random() * 0xFFFFFF).toString(16).toUpperCase().padStart(6, '0');
+      const bytes = Array(4).fill(0).map(() => 
+        Math.floor(Math.random() * 256).toString(16).toUpperCase().padStart(2, '0')
+      ).join(' ');
+      return `0x${addr}  ${bytes}`;
+    }
+
+    // System logs scrolling
+    const logMessages = [
+      'SEC_HANDSHAKE: VERIFIED',
+      'AES_GCM_CORE: LOCK_OK',
+      'ENTROPY_SEED: STABLE',
+      'METADATA_CLEANER: ENGAGED',
+      'SHREDDER: TRIPLE_PASS_STABLE',
+      'PQC_HYBRID: ECC_FALLBACK',
+      'HW_UUID_HASH: CONFIRMED',
+      'VOLATILE_RAM_SHRED: STABLE',
+      'DECOY_BLOCK: ACTIVE',
+      'XOR_SPLIT_GEN: LOADED'
+    ];
+    let activeLogs = Array(6).fill(0).map(() => logMessages[Math.floor(Math.random() * logMessages.length)]);
+    let logTimer = 0;
 
     const labels = [
       '[0x9F:OK]', '[SYS:SECURE]', '[DECOY:ACTIVE]', '[SHRED:CONFIRMED]',
@@ -39,20 +69,30 @@ export default function CyberpunkBackground({ isDarkMode }) {
     ];
 
     // Initialize floating telemetry nodes
-    const nodeCount = 18;
+    const nodeCount = 22;
     const createNode = () => {
       const type = Math.random() > 0.75 ? 'reticle' : 'text';
       return {
         x: Math.random() * canvas.width,
         y: (canvas.height * 0.45) + Math.random() * (canvas.height * 0.5),
         opacity: 0.1 + Math.random() * 0.6,
-        speedY: -0.2 - Math.random() * 0.6,
+        speedY: -0.2 - Math.random() * 0.5,
         label: labels[Math.floor(Math.random() * labels.length)],
         type
       };
     };
 
     let nodes = Array(nodeCount).fill(0).map(() => createNode());
+
+    // Generate static grid crosshair coordinates (+)
+    const crosshairs = [];
+    const rows = 6;
+    const cols = 8;
+    for (let r = 1; r < rows; r++) {
+      for (let c = 1; c < cols; c++) {
+        crosshairs.push({ r, c });
+      }
+    }
 
     // Theme adaptive colors (Solid Black in Dark Mode)
     const getColors = () => {
@@ -66,8 +106,10 @@ export default function CyberpunkBackground({ isDarkMode }) {
           horizonGlow: 'rgba(6, 182, 212, 0.03)', // Cyan
           laserColor: 'rgba(6, 182, 212, 0.6)',
           laserGlow: 'rgba(6, 182, 212, 0.1)',
-          vectorRings: 'rgba(6, 182, 212, 0.12)',
-          packetRgb: '139, 92, 246'
+          vectorRings: 'rgba(6, 182, 212, 0.15)',
+          packetRgb: '139, 92, 246',
+          sideHexColor: 'rgba(139, 92, 246, 0.18)',
+          crosshairColor: 'rgba(6, 182, 212, 0.06)'
         };
       } else {
         return {
@@ -79,8 +121,10 @@ export default function CyberpunkBackground({ isDarkMode }) {
           horizonGlow: 'rgba(8, 145, 178, 0.02)', // Cyan
           laserColor: 'rgba(8, 145, 178, 0.4)',
           laserGlow: 'rgba(8, 145, 178, 0.06)',
-          vectorRings: 'rgba(8, 145, 178, 0.08)',
-          packetRgb: '124, 58, 237'
+          vectorRings: 'rgba(8, 145, 178, 0.1)',
+          packetRgb: '124, 58, 237',
+          sideHexColor: 'rgba(124, 58, 237, 0.14)',
+          crosshairColor: 'rgba(8, 145, 178, 0.04)'
         };
       }
     };
@@ -101,7 +145,21 @@ export default function CyberpunkBackground({ isDarkMode }) {
 
       const horizonY = canvas.height * 0.45;
 
-      // 2. Horizon Glow Mist (Synthwave backdrop)
+      // 2. Static crosshair coordinate overlay (+)
+      ctx.strokeStyle = colors.crosshairColor;
+      ctx.lineWidth = 1;
+      crosshairs.forEach(({ r, c }) => {
+        const x = (c / cols) * canvas.width;
+        const y = (r / rows) * canvas.height;
+        ctx.beginPath();
+        // horizontal tick
+        ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
+        // vertical tick
+        ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5);
+        ctx.stroke();
+      });
+
+      // 3. Horizon Glow Mist (Synthwave backdrop)
       const glowGrad = ctx.createRadialGradient(
         canvas.width / 2, horizonY, 20,
         canvas.width / 2, horizonY, canvas.width / 2
@@ -111,12 +169,12 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // 3. Hacking Cybernetic Vector Radar Rings (Concentric rotating arcs)
+      // 4. Concentric Rotating Vector Rings with degree tics
       rotationAngle += 0.005;
       ctx.lineWidth = 1;
       ctx.strokeStyle = colors.vectorRings;
       
-      // Outer ring
+      // Outer arc sweep
       ctx.beginPath();
       ctx.arc(canvas.width / 2, horizonY, 180, rotationAngle, rotationAngle + Math.PI * 0.6);
       ctx.stroke();
@@ -124,19 +182,58 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.arc(canvas.width / 2, horizonY, 180, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
       ctx.stroke();
 
+      // Middle ring degree tics
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
+        const startX = canvas.width / 2 + Math.cos(angle + rotationAngle * 0.5) * 135;
+        const startY = horizonY + Math.sin(angle + rotationAngle * 0.5) * 135;
+        const endX = canvas.width / 2 + Math.cos(angle + rotationAngle * 0.5) * 143;
+        const endY = horizonY + Math.sin(angle + rotationAngle * 0.5) * 143;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+      }
+
       // Inner dashed ring
       ctx.setLineDash([4, 12]);
       ctx.beginPath();
-      ctx.arc(canvas.width / 2, horizonY, 100, -rotationAngle, -rotationAngle + Math.PI * 2);
+      ctx.arc(canvas.width / 2, horizonY, 90, -rotationAngle, -rotationAngle + Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]); // Reset line dash
 
-      // 4. Glitch Calculations
+      // 5. Left and Right scrolling Hacking Hex Columns
+      hexScrollTimer++;
+      if (hexScrollTimer > 8) {
+        hexScrollTimer = 0;
+        leftHexLines.shift();
+        leftHexLines.push(generateHexLine());
+        rightHexLines.shift();
+        rightHexLines.push(generateHexLine());
+      }
+
+      ctx.font = '500 11px "Fira Code", monospace';
+      ctx.fillStyle = colors.sideHexColor;
+      
+      const leftColX = 30;
+      const rightColX = canvas.width - 200;
+      
+      for (let i = 0; i < hexLinesCount; i++) {
+        const y = 80 + i * 22;
+        // Fade out lines at the top and bottom edges
+        let edgeOpacity = 1;
+        if (i < 3) edgeOpacity = i / 3;
+        if (i > hexLinesCount - 4) edgeOpacity = (hexLinesCount - 1 - i) / 3;
+        
+        ctx.fillStyle = colors.sideHexColor.replace(/[\d\.]+\)$/, `${edgeOpacity * 0.18})`);
+        ctx.fillText(leftHexLines[i], leftColX, y);
+        ctx.fillText(rightHexLines[i], rightColX, y);
+      }
+
+      // 6. Glitch Calculations
       const isGlitching = Math.random() > 0.985;
       const glitchOffset = isGlitching ? (Math.random() - 0.5) * 20 : 0;
 
-      // 5. Perspective Grid Rendering with depth gradients
-      // Vertical converging rays fading into the horizon
+      // 7. Perspective Grid Rendering with depth gradients
       const rayCount = 22;
       const rayGrad = ctx.createLinearGradient(0, horizonY, 0, canvas.height);
       rayGrad.addColorStop(0, colors.gridRayStart);
@@ -152,14 +249,12 @@ export default function CyberpunkBackground({ isDarkMode }) {
         ctx.stroke();
       }
 
-      // Scrolling horizontal perspective gridlines with opacity depth fades
+      // Scrolling horizontal perspective gridlines
       gridOffset = (gridOffset + 0.65) % 100;
       const horizCount = 12;
       for (let i = 0; i < horizCount; i++) {
         const ratio = ((i + (gridOffset / 100)) % 1);
-        // Exponential depth scaling
         const y = horizonY + Math.pow(ratio, 3.5) * (canvas.height - horizonY);
-        // Opacity vanishes near horizon (ratio = 0) and gets solid near screen (ratio = 1)
         ctx.strokeStyle = `rgba(${colors.gridStrokeRgb}, ${Math.pow(ratio, 2) * colors.gridStrokeMaxOpacity})`;
         ctx.beginPath();
         ctx.moveTo(0, y);
@@ -167,7 +262,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
         ctx.stroke();
       }
 
-      // 6. Sweeping Scan Laser
+      // 8. Sweeping Scan Laser
       laserY += 3.5;
       if (laserY > canvas.height) {
         laserY = 0;
@@ -182,14 +277,14 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = laserGrad;
       ctx.fillRect(0, laserY - 10, canvas.width, 20);
 
-      // 7. Floating Telemetry / Target Locking Reticles
+      // 9. Floating Telemetry / Target Locking Reticles
       ctx.font = '700 9px "Fira Code", monospace';
       
       nodes.forEach((node) => {
         node.y += node.speedY;
         node.opacity -= 0.0025;
 
-        // Reset telemetry node when out of bounds or faded
+        // Reset telemetry node
         if (node.y < horizonY || node.opacity <= 0) {
           Object.assign(node, createNode());
         }
@@ -221,17 +316,50 @@ export default function CyberpunkBackground({ isDarkMode }) {
           ctx.lineTo(screenX + size, node.y + size / 2);
           ctx.stroke();
 
-          // Small crosshair dot in center
+          // Small crosshair dot
           ctx.fillStyle = opacityStr;
           ctx.fillRect(screenX - 1, node.y - 1, 2, 2);
 
-          // Lock text indicator
           ctx.fillText(node.label, screenX + size + 4, node.y + 3);
         } else {
-          // Standard text stream packet
           ctx.fillStyle = opacityStr;
           ctx.fillText(node.label, screenX, node.y);
         }
+      });
+
+      // 10. Draw connecting mesh vector links between telemetry nodes
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 130) {
+            // Draw connection line fading by distance and node opacities
+            const lineOpacity = (1 - dist / 130) * 0.08 * Math.min(nodes[i].opacity, nodes[j].opacity);
+            ctx.strokeStyle = `rgba(${colors.packetRgb}, ${lineOpacity})`;
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 11. Bottom-Left Scrolling System Hacking Logs
+      logTimer++;
+      if (logTimer > 40) {
+        logTimer = 0;
+        activeLogs.shift();
+        activeLogs.push(logMessages[Math.floor(Math.random() * logMessages.length)]);
+      }
+
+      ctx.font = '600 9px "Fira Code", monospace';
+      const logYBase = canvas.height - 180;
+      activeLogs.forEach((logLine, index) => {
+        const logOpacity = (index + 1) / activeLogs.length * 0.35;
+        ctx.fillStyle = `rgba(${colors.packetRgb}, ${logOpacity})`;
+        ctx.fillText(`> ${logLine}`, 30, logYBase + index * 16);
       });
     };
 
