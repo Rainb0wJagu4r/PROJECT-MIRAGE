@@ -607,7 +607,6 @@ export default function App() {
       {/* Brand Header */}
       <header className="app-header">
         <h1 className="brand-title">
-          <Shield className="brand-logo-icon" size={38} style={{ color: 'var(--color-primary)' }} />
           PROJECT MIRAGE
         </h1>
         <p className="brand-subtitle">

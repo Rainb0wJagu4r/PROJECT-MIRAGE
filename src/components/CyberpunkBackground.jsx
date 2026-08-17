@@ -201,6 +201,104 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.stroke();
       ctx.setLineDash([]); // Reset line dash
 
+      // 3D Rotating Hacking Globe
+      const globeRadius = 110;
+      const globeCX = canvas.width / 2;
+      const globeCY = horizonY;
+      const tilt = 0.35; // tilt on X-axis
+
+      // Draw silhouette outer ring of the globe
+      ctx.strokeStyle = colors.vectorRings;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Parallels (Latitude circles)
+      const latSteps = 6;
+      for (let j = 1; j < latSteps; j++) {
+        const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
+        ctx.beginPath();
+        for (let k = 0; k <= 36; k++) {
+          const lon = (k / 36) * Math.PI * 2 + rotationAngle;
+          const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+          const y = globeRadius * Math.sin(lat);
+          const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+
+          // Apply X-axis tilt rotation
+          const rx = x;
+          const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+          const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+          const screenX = globeCX + rx;
+          const screenY = globeCY + ry;
+
+          if (k === 0) {
+            ctx.moveTo(screenX, screenY);
+          } else {
+            ctx.lineTo(screenX, screenY);
+          }
+        }
+        ctx.stroke();
+      }
+
+      // Meridians (Longitude lines)
+      const lonSteps = 8;
+      for (let j = 0; j < lonSteps; j++) {
+        const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
+        ctx.beginPath();
+        for (let k = 0; k <= 24; k++) {
+          const lat = -Math.PI / 2 + (k / 24) * Math.PI;
+          const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+          const y = globeRadius * Math.sin(lat);
+          const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+
+          // Apply X-axis tilt rotation
+          const rx = x;
+          const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+          const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+          const screenX = globeCX + rx;
+          const screenY = globeCY + ry;
+
+          if (k === 0) {
+            ctx.moveTo(screenX, screenY);
+          } else {
+            ctx.lineTo(screenX, screenY);
+          }
+        }
+        ctx.stroke();
+      }
+
+      // Blinking red target dot rotating on the globe surface
+      const dotLat = 0.25; 
+      const dotLon = rotationAngle * 2.2; 
+      const dotX = globeRadius * Math.cos(dotLat) * Math.sin(dotLon);
+      const dotY = globeRadius * Math.sin(dotLat);
+      const dotZ = globeRadius * Math.cos(dotLat) * Math.cos(dotLon);
+
+      // Rotate
+      const drx = dotX;
+      const dry = dotY * Math.cos(tilt) - dotZ * Math.sin(tilt);
+      const drz = dotY * Math.sin(tilt) + dotZ * Math.cos(tilt);
+
+      if (drz > 0) {
+        // Front facing
+        ctx.fillStyle = isDarkMode ? '#06b6d4' : '#0891b2';
+        ctx.beginPath();
+        ctx.arc(globeCX + drx, globeCY + dry, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw crosshair reticle box around the tracking dot
+        ctx.strokeStyle = isDarkMode ? '#ef4444' : '#dc2626'; // Alert Red scanning box
+        ctx.lineWidth = 1;
+        ctx.strokeRect(globeCX + drx - 6, globeCY + dry - 6, 12, 12);
+        
+        ctx.font = '600 8px "Fira Code", monospace';
+        ctx.fillStyle = isDarkMode ? '#ef4444' : '#dc2626';
+        ctx.fillText('TRK_0', globeCX + drx + 10, globeCY + dry + 3);
+      }
+
       // 5. Left and Right scrolling Hacking Hex Columns
       hexScrollTimer++;
       if (hexScrollTimer > 8) {
@@ -335,7 +433,6 @@ export default function CyberpunkBackground({ isDarkMode }) {
           const dy = nodes[i].y - nodes[j].y;
           const dist = Math.sqrt(dx*dx + dy*dy);
           if (dist < 130) {
-            // Draw connection line fading by distance and node opacities
             const lineOpacity = (1 - dist / 130) * 0.08 * Math.min(nodes[i].opacity, nodes[j].opacity);
             ctx.strokeStyle = `rgba(${colors.packetRgb}, ${lineOpacity})`;
             ctx.beginPath();
