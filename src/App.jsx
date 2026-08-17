@@ -21,7 +21,7 @@ import Dropzone from './components/Dropzone';
 import AdvancedOptions from './components/AdvancedOptions';
 import PathInput from './components/PathInput';
 import ProcessingOverlay from './components/ProcessingOverlay';
-import MatrixBackground from './components/MatrixBackground';
+import CyberpunkBackground from './components/CyberpunkBackground';
 import tokenData from './token.json';
 
 // Translations Dictionary
@@ -580,7 +580,7 @@ export default function App() {
 
   return (
     <>
-      <MatrixBackground isDarkMode={isDarkMode} />
+      <CyberpunkBackground isDarkMode={isDarkMode} />
       <div className="app-container">
       {/* Settings / Controls Bar */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '-10px', zIndex: 10 }}>
