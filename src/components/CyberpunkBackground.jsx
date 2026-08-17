@@ -119,7 +119,32 @@ export default function CyberpunkBackground({ isDarkMode }) {
       }
     }
 
-    // Static coordinates for orbiting telemetry tags around the 3D globe
+    // Coordinates for simplified continent wireframe polygons (countries)
+    const continents = [
+      // Americas (North & South)
+      [
+        [-120, 60], [-100, 65], [-80, 70], [-60, 60], [-50, 45], [-70, 15],
+        [-40, -10], [-60, -40], [-70, -55], [-74, -55], [-70, -35], [-72, -15],
+        [-80, 10], [-100, 18], [-120, 35], [-125, 50], [-120, 60]
+      ],
+      // Africa
+      [
+        [20, 35], [32, 31], [50, 12], [40, -15], [30, -32], [18, -34],
+        [10, 5], [-15, 16], [-15, 30], [20, 35]
+      ],
+      // Eurasia (Europe & Asia)
+      [
+        [-10, 62], [10, 65], [30, 70], [60, 75], [100, 75], [140, 70],
+        [142, 50], [130, 35], [120, 15], [100, 2], [80, 12], [45, 14],
+        [35, 30], [15, 38], [-5, 38], [-10, 62]
+      ],
+      // Australia
+      [
+        [114, -22], [143, -15], [150, -34], [115, -34], [114, -22]
+      ]
+    ];
+
+    // Static coordinates for orbiting telemetry tags around the 3D globe (more letters)
     const globeOrbiters = [
       { lat: 0.6, lon: 0.3, text: 'SAT_NET_LINK' },
       { lat: 0.3, lon: 1.8, text: 'ALT_EST: 35786KM' },
@@ -144,9 +169,10 @@ export default function CyberpunkBackground({ isDarkMode }) {
           laserColor: 'rgba(6, 182, 212, 0.6)',
           laserGlow: 'rgba(6, 182, 212, 0.1)',
           vectorRings: 'rgba(139, 92, 246, 0.22)', // Purple rings
-          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front
-          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back
+          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front meridians
+          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back meridians
           globeSilhouette: 'rgba(6, 182, 212, 0.22)',
+          continentsColor: 'rgba(6, 182, 212, 0.55)', // Bright cyan outline for countries
           orbiterTextColor: 'rgba(6, 182, 212, 0.75)', // Brighter cyan for globe data labels
           packetRgb: '139, 92, 246',
           sideHexColor: 'rgba(139, 92, 246, 0.18)',
@@ -166,6 +192,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
           globeFront: 'rgba(8, 145, 178, 0.35)', // Cyan front
           globeBack: 'rgba(8, 145, 178, 0.06)',  // Dim back
           globeSilhouette: 'rgba(8, 145, 178, 0.14)',
+          continentsColor: 'rgba(8, 145, 178, 0.45)',
           orbiterTextColor: 'rgba(8, 145, 178, 0.65)',
           packetRgb: '124, 58, 237',
           sideHexColor: 'rgba(124, 58, 237, 0.14)',
@@ -212,9 +239,9 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (Centered Vertically on the Right) ---
-      const globeRadius = 220; // 200% larger (440px diameter!)
-      const globeCX = canvas.width - 240; // Positioned on the right
+      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (Aligned with User's Mockup) ---
+      const globeRadius = 220; // 220px radius (440px diameter!)
+      const globeCX = canvas.width - 200; // Positioned on the right side overlapping card
       const globeCY = canvas.height * 0.48; // Centered vertically relative to the cards
       const tilt = 0.35; // tilt on X-axis (approx 20 deg)
 
@@ -260,8 +287,50 @@ export default function CyberpunkBackground({ isDarkMode }) {
         ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
         ctx.stroke();
 
+        // Draw Continents (Countries wireframe)
+        ctx.lineWidth = 1.4;
+        continents.forEach((polygon) => {
+          ctx.beginPath();
+          let firstPointDrawn = false;
+          
+          for (let i = 0; i < polygon.length; i++) {
+            const [lonDeg, latDeg] = polygon[i];
+            const latRad = (latDeg * Math.PI) / 180;
+            const lonRad = (lonDeg * Math.PI) / 180 + rotationAngle;
+            
+            const x = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
+            const y = -globeRadius * Math.sin(latRad);
+            const z = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
+
+            // Apply X-axis tilt
+            const rx = x;
+            const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+            const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+
+            // Only render line segments on the front-facing hemisphere (rz > 0)
+            if (rz > 0) {
+              ctx.strokeStyle = colors.continentsColor;
+              if (!firstPointDrawn) {
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenY);
+                firstPointDrawn = true;
+              } else {
+                ctx.lineTo(screenX, screenY);
+              }
+            } else {
+              // Break path to avoid wrapping across the back
+              ctx.stroke();
+              firstPointDrawn = false;
+            }
+          }
+          ctx.stroke();
+        });
+
         // Globe Latitudes (Parallels)
-        const latSteps = 12; // increased density for detailed wireframe look
+        const latSteps = 8;
         for (let j = 1; j < latSteps; j++) {
           const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
           
@@ -275,9 +344,8 @@ export default function CyberpunkBackground({ isDarkMode }) {
             const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
             const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
 
-            // Draw front wires clearly, back wires faded for deep 3D effect
-            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
-            ctx.lineWidth = rz > 0 ? 0.9 : 0.5;
+            ctx.strokeStyle = rz > 0 ? colors.globeBack : 'rgba(0,0,0,0)'; // Hide back parallels for continent clarity
+            ctx.lineWidth = 0.5;
 
             const screenX = globeCX + rx;
             const screenY = globeCY + ry;
@@ -295,7 +363,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
         }
 
         // Globe Longitudes (Meridians)
-        const lonSteps = 12; // increased density for detailed wireframe look
+        const lonSteps = 10;
         for (let j = 0; j < lonSteps; j++) {
           const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
           
@@ -309,8 +377,8 @@ export default function CyberpunkBackground({ isDarkMode }) {
             const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
             const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
 
-            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
-            ctx.lineWidth = rz > 0 ? 0.9 : 0.5;
+            ctx.strokeStyle = rz > 0 ? colors.globeBack : 'rgba(0,0,0,0)'; // Hide back meridians
+            ctx.lineWidth = 0.5;
 
             const screenX = globeCX + rx;
             const screenY = globeCY + ry;
@@ -327,7 +395,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
           }
         }
 
-        // --- ORBITING TELEMETRY TEXT LABELS (Más letras en el globo) ---
+        // --- ORBITING TELEMETRY TEXT LABELS (Letras en el globo) ---
         ctx.font = '600 8px "Fira Code", monospace';
         globeOrbiters.forEach((orb) => {
           // Calculate orbital rotation
