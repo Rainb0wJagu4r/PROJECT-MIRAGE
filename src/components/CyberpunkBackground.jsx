@@ -119,6 +119,31 @@ export default function CyberpunkBackground({ isDarkMode }) {
       }
     }
 
+    // Coordinates for simplified continent wireframe polygons
+    const continents = [
+      // Americas (North & South)
+      [
+        [-120, 60], [-100, 65], [-80, 70], [-60, 60], [-50, 45], [-70, 15],
+        [-40, -10], [-60, -40], [-70, -55], [-74, -55], [-70, -35], [-72, -15],
+        [-80, 10], [-100, 18], [-120, 35], [-125, 50], [-120, 60]
+      ],
+      // Africa
+      [
+        [20, 35], [32, 31], [50, 12], [40, -15], [30, -32], [18, -34],
+        [10, 5], [-15, 16], [-15, 30], [20, 35]
+      ],
+      // Eurasia (Europe & Asia)
+      [
+        [-10, 62], [10, 65], [30, 70], [60, 75], [100, 75], [140, 70],
+        [142, 50], [130, 35], [120, 15], [100, 2], [80, 12], [45, 14],
+        [35, 30], [15, 38], [-5, 38], [-10, 62]
+      ],
+      // Australia
+      [
+        [114, -22], [143, -15], [150, -34], [115, -34], [114, -22]
+      ]
+    ];
+
     // Theme adaptive colors (Solid Black in Dark Mode)
     const getColors = () => {
       if (isDarkMode) {
@@ -131,10 +156,11 @@ export default function CyberpunkBackground({ isDarkMode }) {
           horizonGlow: 'rgba(6, 182, 212, 0.03)', // Cyan
           laserColor: 'rgba(6, 182, 212, 0.6)',
           laserGlow: 'rgba(6, 182, 212, 0.1)',
-          vectorRings: 'rgba(139, 92, 246, 0.25)', // Purple rings
-          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front
-          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back
-          globeSilhouette: 'rgba(6, 182, 212, 0.25)',
+          vectorRings: 'rgba(139, 92, 246, 0.22)', // Purple rings
+          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front meridians
+          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back meridians
+          globeSilhouette: 'rgba(6, 182, 212, 0.22)',
+          continentsColor: 'rgba(6, 182, 212, 0.55)', // Bright cyan outline for countries
           packetRgb: '139, 92, 246',
           sideHexColor: 'rgba(139, 92, 246, 0.18)',
           crosshairColor: 'rgba(6, 182, 212, 0.06)'
@@ -149,10 +175,11 @@ export default function CyberpunkBackground({ isDarkMode }) {
           horizonGlow: 'rgba(8, 145, 178, 0.02)', // Cyan
           laserColor: 'rgba(8, 145, 178, 0.4)',
           laserGlow: 'rgba(8, 145, 178, 0.06)',
-          vectorRings: 'rgba(124, 58, 237, 0.2)', // Violet rings
+          vectorRings: 'rgba(124, 58, 237, 0.18)', // Violet rings
           globeFront: 'rgba(8, 145, 178, 0.35)', // Cyan front
           globeBack: 'rgba(8, 145, 178, 0.06)',  // Dim back
-          globeSilhouette: 'rgba(8, 145, 178, 0.18)',
+          globeSilhouette: 'rgba(8, 145, 178, 0.14)',
+          continentsColor: 'rgba(8, 145, 178, 0.45)',
           packetRgb: '124, 58, 237',
           sideHexColor: 'rgba(124, 58, 237, 0.14)',
           crosshairColor: 'rgba(8, 145, 178, 0.04)'
@@ -198,34 +225,34 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // --- NEW HOLOGRAPHIC SATELLITE HUD WIDGET (Upper-Right Background) ---
-      const globeRadius = 75;
-      const globeCX = canvas.width - 240;
-      const globeCY = 230;
+      // --- NEW HOLOGRAPHIC SATELLITE HUD WIDGET (Centered Vertically on the Right) ---
+      const globeRadius = 135; // Much larger radius!
+      const globeCX = canvas.width - 230; // Positioned on the right side
+      const globeCY = canvas.height * 0.48; // Centered vertically relative to the cards
       const tilt = 0.35; // tilt on X-axis (approx 20 deg)
 
       // Only render if screen is wide enough to prevent mobile collision
-      if (canvas.width > 800) {
+      if (canvas.width > 900) {
         rotationAngle += 0.005;
 
         // Concentric Rotating HUD Rings
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.2;
         ctx.strokeStyle = colors.vectorRings;
         
         // Outer arc sweep
         ctx.beginPath();
-        ctx.arc(globeCX, globeCY, 115, rotationAngle, rotationAngle + Math.PI * 0.6);
+        ctx.arc(globeCX, globeCY, 195, rotationAngle, rotationAngle + Math.PI * 0.6);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(globeCX, globeCY, 115, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
+        ctx.arc(globeCX, globeCY, 195, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
         ctx.stroke();
 
         // Middle ring degree ticks
         for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
-          const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 92;
-          const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 92;
-          const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 99;
-          const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 99;
+          const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 160;
+          const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 160;
+          const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 168;
+          const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 168;
           ctx.beginPath();
           ctx.moveTo(startX, startY);
           ctx.lineTo(endX, endY);
@@ -235,37 +262,76 @@ export default function CyberpunkBackground({ isDarkMode }) {
         // Inner dashed ring
         ctx.setLineDash([3, 8]);
         ctx.beginPath();
-        ctx.arc(globeCX, globeCY, 84, -rotationAngle, -rotationAngle + Math.PI * 2);
+        ctx.arc(globeCX, globeCY, 150, -rotationAngle, -rotationAngle + Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]); // Reset line dash
 
         // Draw silhouette outer ring of the globe
         ctx.strokeStyle = colors.globeSilhouette;
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Globe Latitudes (Parallels)
-        const latSteps = 6;
-        for (let j = 1; j < latSteps; j++) {
-          const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
+        // Draw Continents (Countries wireframe)
+        ctx.lineWidth = 1.4;
+        continents.forEach((polygon) => {
+          ctx.beginPath();
+          let firstPointDrawn = false;
           
-          // Draw lat loop connecting 3D projected points
-          for (let k = 0; k <= 36; k++) {
-            const lon = (k / 36) * Math.PI * 2 + rotationAngle;
-            const x = globeRadius * Math.cos(lat) * Math.sin(lon);
-            const y = globeRadius * Math.sin(lat);
-            const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+          for (let i = 0; i < polygon.length; i++) {
+            const [lonDeg, latDeg] = polygon[i];
+            const latRad = (latDeg * Math.PI) / 180;
+            const lonRad = (lonDeg * Math.PI) / 180 + rotationAngle;
+            
+            const x = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
+            const y = -globeRadius * Math.sin(latRad);
+            const z = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
 
             // Apply X-axis tilt
             const rx = x;
             const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
             const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
 
-            // Differentiate front vs back lines for deep 3D wireframe render
-            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
-            ctx.lineWidth = rz > 0 ? 1 : 0.6;
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+
+            // Only render line segments on the front-facing hemisphere (rz > 0)
+            if (rz > 0) {
+              ctx.strokeStyle = colors.continentsColor;
+              if (!firstPointDrawn) {
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenY);
+                firstPointDrawn = true;
+              } else {
+                ctx.lineTo(screenX, screenY);
+              }
+            } else {
+              // Break path to avoid wrapping across the back
+              ctx.stroke();
+              firstPointDrawn = false;
+            }
+          }
+          ctx.stroke();
+        });
+
+        // Globe Latitudes (Parallels)
+        const latSteps = 6;
+        for (let j = 1; j < latSteps; j++) {
+          const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
+          
+          for (let k = 0; k <= 36; k++) {
+            const lon = (k / 36) * Math.PI * 2 + rotationAngle;
+            const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+            const y = globeRadius * Math.sin(lat);
+            const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+
+            const rx = x;
+            const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+            const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+            ctx.strokeStyle = rz > 0 ? colors.globeBack : 'rgba(0,0,0,0)'; // Hide back parallels entirely to make front continents stand out clearly!
+            ctx.lineWidth = 0.5;
 
             const screenX = globeCX + rx;
             const screenY = globeCY + ry;
@@ -276,7 +342,6 @@ export default function CyberpunkBackground({ isDarkMode }) {
             } else {
               ctx.lineTo(screenX, screenY);
               ctx.stroke();
-              // Start a new path for each segment to change color/opacity dynamically based on local depth
               ctx.beginPath();
               ctx.moveTo(screenX, screenY);
             }
@@ -294,13 +359,12 @@ export default function CyberpunkBackground({ isDarkMode }) {
             const y = globeRadius * Math.sin(lat);
             const z = globeRadius * Math.cos(lat) * Math.cos(lon);
 
-            // Apply X-axis tilt
             const rx = x;
             const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
             const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
 
-            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
-            ctx.lineWidth = rz > 0 ? 1 : 0.6;
+            ctx.strokeStyle = rz > 0 ? colors.globeBack : 'rgba(0,0,0,0)'; // Hide back meridians entirely for visual clarity
+            ctx.lineWidth = 0.5;
 
             const screenX = globeCX + rx;
             const screenY = globeCY + ry;
@@ -318,22 +382,17 @@ export default function CyberpunkBackground({ isDarkMode }) {
         }
 
         // --- DYNAMIC GEOLOCATION DOT TARGET ---
-        // Convert user's latitude and longitude to radians
         const latRad = (location.lat * Math.PI) / 180;
-        // Compensate mapping rotation (IP-lookup longitude corresponds to static coordinates, so we add rotationAngle to keep it locked to the rotating globe surface)
         const lonRad = (location.lon * Math.PI) / 180 + rotationAngle;
 
-        // Calculate 3D sphere coordinates
         const dotX = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
-        const dotY = -globeRadius * Math.sin(latRad); // negative because Canvas y goes downwards
+        const dotY = -globeRadius * Math.sin(latRad);
         const dotZ = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
 
-        // Apply X-axis tilt rotation
         const drx = dotX;
         const dry = dotY * Math.cos(tilt) - dotZ * Math.sin(tilt);
         const drz = dotY * Math.sin(tilt) + dotZ * Math.cos(tilt);
 
-        // Render target locked pointer
         const lockColor = isDarkMode ? '#ef4444' : '#dc2626'; // Alert Red
         const screenDotX = globeCX + drx;
         const screenDotY = globeCY + dry;
@@ -342,13 +401,13 @@ export default function CyberpunkBackground({ isDarkMode }) {
           // Point is on the front facing side
           ctx.fillStyle = lockColor;
           ctx.beginPath();
-          ctx.arc(screenDotX, screenDotY, 4, 0, Math.PI * 2);
+          ctx.arc(screenDotX, screenDotY, 5, 0, Math.PI * 2);
           ctx.fill();
 
           // Outer HUD target reticle box around coordinates
           ctx.strokeStyle = lockColor;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(screenDotX - 7, screenDotY - 7, 14, 14);
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(screenDotX - 8, screenDotY - 8, 16, 16);
 
           // Draw tracking pointer line
           ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
@@ -358,11 +417,11 @@ export default function CyberpunkBackground({ isDarkMode }) {
           ctx.stroke();
 
           // Coordinates detail box
-          ctx.font = '600 8px "Fira Code", monospace';
+          ctx.font = '600 9px "Fira Code", monospace';
           ctx.fillStyle = lockColor;
           ctx.fillText(`LOC: ${location.country}`, screenDotX + 40, screenDotY - 25);
           ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(19, 14, 36, 0.6)';
-          ctx.fillText(`${location.lat.toFixed(2)}N ${location.lon.toFixed(2)}E`, screenDotX + 40, screenDotY - 15);
+          ctx.fillText(`${location.lat.toFixed(2)}N ${location.lon.toFixed(2)}E`, screenDotX + 40, screenDotY - 13);
         } else {
           // Point is on the back side (occluded) - draw a faint tracking helper
           ctx.strokeStyle = isDarkMode ? 'rgba(239, 68, 68, 0.15)' : 'rgba(220, 38, 38, 0.15)';
