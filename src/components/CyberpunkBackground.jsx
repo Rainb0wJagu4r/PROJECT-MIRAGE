@@ -239,9 +239,9 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (500% Larger & Shifted 45% Left) ---
-      const globeRadius = 375; // 500% larger than original 75px!
-      const globeCX = canvas.width - 240 - (canvas.width * 0.45); // Shifted 45% to the left
+      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (500% Larger & Shifted 25% Right of Center) ---
+      const globeRadius = 375; // 500% larger than original 75px
+      const globeCX = canvas.width * 0.75; // Centered on the right side (25% to the right of the center)
       const globeCY = canvas.height * 0.48; // Centered vertically relative to the cards
       const tilt = 0.35; // tilt on X-axis (approx 20 deg)
 
@@ -680,7 +680,6 @@ export default function CyberpunkBackground({ isDarkMode }) {
     // Debounced window resize handler
     let resizeTimer;
     const handleResize = () => {
-      clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         resizeCanvas();
         nodes = Array(nodeCount).fill(0).map(() => createNode());
