@@ -1,7 +1,32 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 export default function CyberpunkBackground({ isDarkMode }) {
   const canvasRef = useRef(null);
+  
+  // Geolocation state (defaulting to Mexico coordinates)
+  const [location, setLocation] = useState({
+    lat: 23.6345,
+    lon: -102.5528,
+    country: 'MEXICO'
+  });
+
+  // Fetch user location on mount
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.latitude && data.longitude) {
+          setLocation({
+            lat: data.latitude,
+            lon: data.longitude,
+            country: (data.country_name || 'MEXICO').toUpperCase()
+          });
+        }
+      })
+      .catch(() => {
+        // Safe silent fallback to default Mexico coordinates
+      });
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -106,7 +131,10 @@ export default function CyberpunkBackground({ isDarkMode }) {
           horizonGlow: 'rgba(6, 182, 212, 0.03)', // Cyan
           laserColor: 'rgba(6, 182, 212, 0.6)',
           laserGlow: 'rgba(6, 182, 212, 0.1)',
-          vectorRings: 'rgba(6, 182, 212, 0.15)',
+          vectorRings: 'rgba(139, 92, 246, 0.25)', // Purple rings
+          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front
+          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back
+          globeSilhouette: 'rgba(6, 182, 212, 0.25)',
           packetRgb: '139, 92, 246',
           sideHexColor: 'rgba(139, 92, 246, 0.18)',
           crosshairColor: 'rgba(6, 182, 212, 0.06)'
@@ -121,7 +149,10 @@ export default function CyberpunkBackground({ isDarkMode }) {
           horizonGlow: 'rgba(8, 145, 178, 0.02)', // Cyan
           laserColor: 'rgba(8, 145, 178, 0.4)',
           laserGlow: 'rgba(8, 145, 178, 0.06)',
-          vectorRings: 'rgba(8, 145, 178, 0.1)',
+          vectorRings: 'rgba(124, 58, 237, 0.2)', // Violet rings
+          globeFront: 'rgba(8, 145, 178, 0.35)', // Cyan front
+          globeBack: 'rgba(8, 145, 178, 0.06)',  // Dim back
+          globeSilhouette: 'rgba(8, 145, 178, 0.18)',
           packetRgb: '124, 58, 237',
           sideHexColor: 'rgba(124, 58, 237, 0.14)',
           crosshairColor: 'rgba(8, 145, 178, 0.04)'
@@ -152,9 +183,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
         const x = (c / cols) * canvas.width;
         const y = (r / rows) * canvas.height;
         ctx.beginPath();
-        // horizontal tick
         ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
-        // vertical tick
         ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5);
         ctx.stroke();
       });
@@ -169,134 +198,180 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // 4. Concentric Rotating Vector Rings with degree tics
-      rotationAngle += 0.005;
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = colors.vectorRings;
-      
-      // Outer arc sweep
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, horizonY, 180, rotationAngle, rotationAngle + Math.PI * 0.6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, horizonY, 180, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
-      ctx.stroke();
+      // --- NEW HOLOGRAPHIC SATELLITE HUD WIDGET (Upper-Right Background) ---
+      const globeRadius = 75;
+      const globeCX = canvas.width - 240;
+      const globeCY = 230;
+      const tilt = 0.35; // tilt on X-axis (approx 20 deg)
 
-      // Middle ring degree tics
-      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
-        const startX = canvas.width / 2 + Math.cos(angle + rotationAngle * 0.5) * 135;
-        const startY = horizonY + Math.sin(angle + rotationAngle * 0.5) * 135;
-        const endX = canvas.width / 2 + Math.cos(angle + rotationAngle * 0.5) * 143;
-        const endY = horizonY + Math.sin(angle + rotationAngle * 0.5) * 143;
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-      }
+      // Only render if screen is wide enough to prevent mobile collision
+      if (canvas.width > 800) {
+        rotationAngle += 0.005;
 
-      // Inner dashed ring
-      ctx.setLineDash([4, 12]);
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, horizonY, 90, -rotationAngle, -rotationAngle + Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset line dash
-
-      // 3D Rotating Hacking Globe
-      const globeRadius = 110;
-      const globeCX = canvas.width / 2;
-      const globeCY = horizonY;
-      const tilt = 0.35; // tilt on X-axis
-
-      // Draw silhouette outer ring of the globe
-      ctx.strokeStyle = colors.vectorRings;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Parallels (Latitude circles)
-      const latSteps = 6;
-      for (let j = 1; j < latSteps; j++) {
-        const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
-        ctx.beginPath();
-        for (let k = 0; k <= 36; k++) {
-          const lon = (k / 36) * Math.PI * 2 + rotationAngle;
-          const x = globeRadius * Math.cos(lat) * Math.sin(lon);
-          const y = globeRadius * Math.sin(lat);
-          const z = globeRadius * Math.cos(lat) * Math.cos(lon);
-
-          // Apply X-axis tilt rotation
-          const rx = x;
-          const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
-          const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
-
-          const screenX = globeCX + rx;
-          const screenY = globeCY + ry;
-
-          if (k === 0) {
-            ctx.moveTo(screenX, screenY);
-          } else {
-            ctx.lineTo(screenX, screenY);
-          }
-        }
-        ctx.stroke();
-      }
-
-      // Meridians (Longitude lines)
-      const lonSteps = 8;
-      for (let j = 0; j < lonSteps; j++) {
-        const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
-        ctx.beginPath();
-        for (let k = 0; k <= 24; k++) {
-          const lat = -Math.PI / 2 + (k / 24) * Math.PI;
-          const x = globeRadius * Math.cos(lat) * Math.sin(lon);
-          const y = globeRadius * Math.sin(lat);
-          const z = globeRadius * Math.cos(lat) * Math.cos(lon);
-
-          // Apply X-axis tilt rotation
-          const rx = x;
-          const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
-          const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
-
-          const screenX = globeCX + rx;
-          const screenY = globeCY + ry;
-
-          if (k === 0) {
-            ctx.moveTo(screenX, screenY);
-          } else {
-            ctx.lineTo(screenX, screenY);
-          }
-        }
-        ctx.stroke();
-      }
-
-      // Blinking red target dot rotating on the globe surface
-      const dotLat = 0.25; 
-      const dotLon = rotationAngle * 2.2; 
-      const dotX = globeRadius * Math.cos(dotLat) * Math.sin(dotLon);
-      const dotY = globeRadius * Math.sin(dotLat);
-      const dotZ = globeRadius * Math.cos(dotLat) * Math.cos(dotLon);
-
-      // Rotate
-      const drx = dotX;
-      const dry = dotY * Math.cos(tilt) - dotZ * Math.sin(tilt);
-      const drz = dotY * Math.sin(tilt) + dotZ * Math.cos(tilt);
-
-      if (drz > 0) {
-        // Front facing
-        ctx.fillStyle = isDarkMode ? '#06b6d4' : '#0891b2';
-        ctx.beginPath();
-        ctx.arc(globeCX + drx, globeCY + dry, 3, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw crosshair reticle box around the tracking dot
-        ctx.strokeStyle = isDarkMode ? '#ef4444' : '#dc2626'; // Alert Red scanning box
+        // Concentric Rotating HUD Rings
         ctx.lineWidth = 1;
-        ctx.strokeRect(globeCX + drx - 6, globeCY + dry - 6, 12, 12);
+        ctx.strokeStyle = colors.vectorRings;
         
-        ctx.font = '600 8px "Fira Code", monospace';
-        ctx.fillStyle = isDarkMode ? '#ef4444' : '#dc2626';
-        ctx.fillText('TRK_0', globeCX + drx + 10, globeCY + dry + 3);
+        // Outer arc sweep
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, 115, rotationAngle, rotationAngle + Math.PI * 0.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, 115, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
+        ctx.stroke();
+
+        // Middle ring degree ticks
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
+          const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 92;
+          const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 92;
+          const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 99;
+          const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 99;
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+
+        // Inner dashed ring
+        ctx.setLineDash([3, 8]);
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, 84, -rotationAngle, -rotationAngle + Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset line dash
+
+        // Draw silhouette outer ring of the globe
+        ctx.strokeStyle = colors.globeSilhouette;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Globe Latitudes (Parallels)
+        const latSteps = 6;
+        for (let j = 1; j < latSteps; j++) {
+          const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
+          
+          // Draw lat loop connecting 3D projected points
+          for (let k = 0; k <= 36; k++) {
+            const lon = (k / 36) * Math.PI * 2 + rotationAngle;
+            const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+            const y = globeRadius * Math.sin(lat);
+            const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+
+            // Apply X-axis tilt
+            const rx = x;
+            const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+            const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+            // Differentiate front vs back lines for deep 3D wireframe render
+            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
+            ctx.lineWidth = rz > 0 ? 1 : 0.6;
+
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+
+            if (k === 0) {
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
+            } else {
+              ctx.lineTo(screenX, screenY);
+              ctx.stroke();
+              // Start a new path for each segment to change color/opacity dynamically based on local depth
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
+            }
+          }
+        }
+
+        // Globe Longitudes (Meridians)
+        const lonSteps = 8;
+        for (let j = 0; j < lonSteps; j++) {
+          const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
+          
+          for (let k = 0; k <= 24; k++) {
+            const lat = -Math.PI / 2 + (k / 24) * Math.PI;
+            const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+            const y = globeRadius * Math.sin(lat);
+            const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+
+            // Apply X-axis tilt
+            const rx = x;
+            const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+            const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
+            ctx.lineWidth = rz > 0 ? 1 : 0.6;
+
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+
+            if (k === 0) {
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
+            } else {
+              ctx.lineTo(screenX, screenY);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
+            }
+          }
+        }
+
+        // --- DYNAMIC GEOLOCATION DOT TARGET ---
+        // Convert user's latitude and longitude to radians
+        const latRad = (location.lat * Math.PI) / 180;
+        // Compensate mapping rotation (IP-lookup longitude corresponds to static coordinates, so we add rotationAngle to keep it locked to the rotating globe surface)
+        const lonRad = (location.lon * Math.PI) / 180 + rotationAngle;
+
+        // Calculate 3D sphere coordinates
+        const dotX = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
+        const dotY = -globeRadius * Math.sin(latRad); // negative because Canvas y goes downwards
+        const dotZ = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
+
+        // Apply X-axis tilt rotation
+        const drx = dotX;
+        const dry = dotY * Math.cos(tilt) - dotZ * Math.sin(tilt);
+        const drz = dotY * Math.sin(tilt) + dotZ * Math.cos(tilt);
+
+        // Render target locked pointer
+        const lockColor = isDarkMode ? '#ef4444' : '#dc2626'; // Alert Red
+        const screenDotX = globeCX + drx;
+        const screenDotY = globeCY + dry;
+
+        if (drz > 0) {
+          // Point is on the front facing side
+          ctx.fillStyle = lockColor;
+          ctx.beginPath();
+          ctx.arc(screenDotX, screenDotY, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Outer HUD target reticle box around coordinates
+          ctx.strokeStyle = lockColor;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(screenDotX - 7, screenDotY - 7, 14, 14);
+
+          // Draw tracking pointer line
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+          ctx.beginPath();
+          ctx.moveTo(screenDotX, screenDotY);
+          ctx.lineTo(screenDotX + 35, screenDotY - 20);
+          ctx.stroke();
+
+          // Coordinates detail box
+          ctx.font = '600 8px "Fira Code", monospace';
+          ctx.fillStyle = lockColor;
+          ctx.fillText(`LOC: ${location.country}`, screenDotX + 40, screenDotY - 25);
+          ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(19, 14, 36, 0.6)';
+          ctx.fillText(`${location.lat.toFixed(2)}N ${location.lon.toFixed(2)}E`, screenDotX + 40, screenDotY - 15);
+        } else {
+          // Point is on the back side (occluded) - draw a faint tracking helper
+          ctx.strokeStyle = isDarkMode ? 'rgba(239, 68, 68, 0.15)' : 'rgba(220, 38, 38, 0.15)';
+          ctx.setLineDash([2, 4]);
+          ctx.beginPath();
+          ctx.arc(screenDotX, screenDotY, 3, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
 
       // 5. Left and Right scrolling Hacking Hex Columns
@@ -310,14 +385,12 @@ export default function CyberpunkBackground({ isDarkMode }) {
       }
 
       ctx.font = '500 11px "Fira Code", monospace';
-      ctx.fillStyle = colors.sideHexColor;
       
       const leftColX = 30;
       const rightColX = canvas.width - 200;
       
       for (let i = 0; i < hexLinesCount; i++) {
         const y = 80 + i * 22;
-        // Fade out lines at the top and bottom edges
         let edgeOpacity = 1;
         if (i < 3) edgeOpacity = i / 3;
         if (i > hexLinesCount - 4) edgeOpacity = (hexLinesCount - 1 - i) / 3;
@@ -396,25 +469,20 @@ export default function CyberpunkBackground({ isDarkMode }) {
           ctx.strokeStyle = opacityStr;
           ctx.lineWidth = 1;
           ctx.beginPath();
-          // top-left
           ctx.moveTo(screenX - size, node.y - size / 2);
           ctx.lineTo(screenX - size, node.y - size);
           ctx.lineTo(screenX - size / 2, node.y - size);
-          // top-right
           ctx.moveTo(screenX + size / 2, node.y - size);
           ctx.lineTo(screenX + size, node.y - size);
           ctx.lineTo(screenX + size, node.y - size / 2);
-          // bottom-left
           ctx.moveTo(screenX - size, node.y + size / 2);
           ctx.lineTo(screenX - size, node.y + size);
           ctx.lineTo(screenX - size / 2, node.y + size);
-          // bottom-right
           ctx.moveTo(screenX + size / 2, node.y + size);
           ctx.lineTo(screenX + size, node.y + size);
           ctx.lineTo(screenX + size, node.y + size / 2);
           ctx.stroke();
 
-          // Small crosshair dot
           ctx.fillStyle = opacityStr;
           ctx.fillRect(screenX - 1, node.y - 1, 2, 2);
 
@@ -425,7 +493,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
         }
       });
 
-      // 10. Draw connecting mesh vector links between telemetry nodes
+      // 10. Draw connecting mesh vector links
       ctx.lineWidth = 0.5;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
@@ -521,7 +589,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
       window.removeEventListener('resize', handleResize);
       clearTimeout(resizeTimer);
     };
-  }, [isDarkMode]);
+  }, [isDarkMode, location]);
 
   return <canvas ref={canvasRef} className="cyberpunk-background" />;
 }
