@@ -119,29 +119,16 @@ export default function CyberpunkBackground({ isDarkMode }) {
       }
     }
 
-    // Coordinates for simplified continent wireframe polygons
-    const continents = [
-      // Americas (North & South)
-      [
-        [-120, 60], [-100, 65], [-80, 70], [-60, 60], [-50, 45], [-70, 15],
-        [-40, -10], [-60, -40], [-70, -55], [-74, -55], [-70, -35], [-72, -15],
-        [-80, 10], [-100, 18], [-120, 35], [-125, 50], [-120, 60]
-      ],
-      // Africa
-      [
-        [20, 35], [32, 31], [50, 12], [40, -15], [30, -32], [18, -34],
-        [10, 5], [-15, 16], [-15, 30], [20, 35]
-      ],
-      // Eurasia (Europe & Asia)
-      [
-        [-10, 62], [10, 65], [30, 70], [60, 75], [100, 75], [140, 70],
-        [142, 50], [130, 35], [120, 15], [100, 2], [80, 12], [45, 14],
-        [35, 30], [15, 38], [-5, 38], [-10, 62]
-      ],
-      // Australia
-      [
-        [114, -22], [143, -15], [150, -34], [115, -34], [114, -22]
-      ]
+    // Static coordinates for orbiting telemetry tags around the 3D globe
+    const globeOrbiters = [
+      { lat: 0.6, lon: 0.3, text: 'SAT_NET_LINK' },
+      { lat: 0.3, lon: 1.8, text: 'ALT_EST: 35786KM' },
+      { lat: -0.3, lon: 3.2, text: 'CRYPT_NODE_09' },
+      { lat: 0.1, lon: -1.0, text: 'RTT_PING: 14MS' },
+      { lat: -0.5, lon: -2.2, text: 'HDG: 184.22°' },
+      { lat: -0.1, lon: -0.7, text: 'SEC_CORE_SYS' },
+      { lat: 0.7, lon: -2.8, text: 'PQC_HYBRID_ON' },
+      { lat: -0.7, lon: 1.1, text: 'WRAITH_LOCK: 1' }
     ];
 
     // Theme adaptive colors (Solid Black in Dark Mode)
@@ -157,10 +144,10 @@ export default function CyberpunkBackground({ isDarkMode }) {
           laserColor: 'rgba(6, 182, 212, 0.6)',
           laserGlow: 'rgba(6, 182, 212, 0.1)',
           vectorRings: 'rgba(139, 92, 246, 0.22)', // Purple rings
-          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front meridians
-          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back meridians
+          globeFront: 'rgba(6, 182, 212, 0.45)', // Cyan front
+          globeBack: 'rgba(6, 182, 212, 0.08)',  // Dim cyan back
           globeSilhouette: 'rgba(6, 182, 212, 0.22)',
-          continentsColor: 'rgba(6, 182, 212, 0.55)', // Bright cyan outline for countries
+          orbiterTextColor: 'rgba(6, 182, 212, 0.75)', // Brighter cyan for globe data labels
           packetRgb: '139, 92, 246',
           sideHexColor: 'rgba(139, 92, 246, 0.18)',
           crosshairColor: 'rgba(6, 182, 212, 0.06)'
@@ -179,7 +166,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
           globeFront: 'rgba(8, 145, 178, 0.35)', // Cyan front
           globeBack: 'rgba(8, 145, 178, 0.06)',  // Dim back
           globeSilhouette: 'rgba(8, 145, 178, 0.14)',
-          continentsColor: 'rgba(8, 145, 178, 0.45)',
+          orbiterTextColor: 'rgba(8, 145, 178, 0.65)',
           packetRgb: '124, 58, 237',
           sideHexColor: 'rgba(124, 58, 237, 0.14)',
           crosshairColor: 'rgba(8, 145, 178, 0.04)'
@@ -225,209 +212,205 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // --- ENLARGED HOLOGRAPHIC SATELLITE HUD WIDGET (Centered behind UI) ---
-      const globeRadius = 220; // 200% larger! (Previously 110)
-      const globeCX = canvas.width / 2; // Centered
-      const globeCY = horizonY; // Centered vertically relative to the horizon
+      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (Centered Vertically on the Right) ---
+      const globeRadius = 220; // 200% larger (440px diameter!)
+      const globeCX = canvas.width - 240; // Positioned on the right
+      const globeCY = canvas.height * 0.48; // Centered vertically relative to the cards
       const tilt = 0.35; // tilt on X-axis (approx 20 deg)
 
-      rotationAngle += 0.005;
+      // Only render if screen is wide enough to prevent mobile collision
+      if (canvas.width > 900) {
+        rotationAngle += 0.005;
 
-      // Concentric Rotating HUD Rings
-      ctx.lineWidth = 1.2;
-      ctx.strokeStyle = colors.vectorRings;
-      
-      // Outer arc sweep
-      ctx.beginPath();
-      ctx.arc(globeCX, globeCY, 290, rotationAngle, rotationAngle + Math.PI * 0.6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(globeCX, globeCY, 290, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
-      ctx.stroke();
-
-      // Middle ring degree ticks
-      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
-        const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 250;
-        const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 250;
-        const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 260;
-        const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 260;
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-      }
-
-      // Inner dashed ring
-      ctx.setLineDash([4, 12]);
-      ctx.beginPath();
-      ctx.arc(globeCX, globeCY, 240, -rotationAngle, -rotationAngle + Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset line dash
-
-      // Draw silhouette outer ring of the globe
-      ctx.strokeStyle = colors.globeSilhouette;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Draw Continents (Countries wireframe)
-      ctx.lineWidth = 1.4;
-      continents.forEach((polygon) => {
-        ctx.beginPath();
-        let firstPointDrawn = false;
+        // Concentric Rotating HUD Rings
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = colors.vectorRings;
         
-        for (let i = 0; i < polygon.length; i++) {
-          const [lonDeg, latDeg] = polygon[i];
-          const latRad = (latDeg * Math.PI) / 180;
-          const lonRad = (lonDeg * Math.PI) / 180 + rotationAngle;
+        // Outer arc sweep
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, 290, rotationAngle, rotationAngle + Math.PI * 0.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, 290, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
+        ctx.stroke();
+
+        // Middle ring degree ticks
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
+          const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 250;
+          const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 250;
+          const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 260;
+          const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 260;
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+
+        // Inner dashed ring
+        ctx.setLineDash([4, 12]);
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, 240, -rotationAngle, -rotationAngle + Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset line dash
+
+        // Draw silhouette outer ring of the globe
+        ctx.strokeStyle = colors.globeSilhouette;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(globeCX, globeCY, globeRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Globe Latitudes (Parallels)
+        const latSteps = 12; // increased density for detailed wireframe look
+        for (let j = 1; j < latSteps; j++) {
+          const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
           
-          const x = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
-          const y = -globeRadius * Math.sin(latRad);
-          const z = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
+          for (let k = 0; k <= 36; k++) {
+            const lon = (k / 36) * Math.PI * 2 + rotationAngle;
+            const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+            const y = globeRadius * Math.sin(lat);
+            const z = globeRadius * Math.cos(lat) * Math.cos(lon);
 
-          // Apply X-axis tilt
-          const rx = x;
-          const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
-          const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+            const rx = x;
+            const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+            const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
 
-          const screenX = globeCX + rx;
-          const screenY = globeCY + ry;
+            // Draw front wires clearly, back wires faded for deep 3D effect
+            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
+            ctx.lineWidth = rz > 0 ? 0.9 : 0.5;
 
-          // Only render line segments on the front-facing hemisphere (rz > 0)
-          if (rz > 0) {
-            ctx.strokeStyle = colors.continentsColor;
-            if (!firstPointDrawn) {
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+
+            if (k === 0) {
               ctx.beginPath();
               ctx.moveTo(screenX, screenY);
-              firstPointDrawn = true;
             } else {
               ctx.lineTo(screenX, screenY);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
             }
-          } else {
-            // Break path to avoid wrapping across the back
-            ctx.stroke();
-            firstPointDrawn = false;
           }
         }
-        ctx.stroke();
-      });
 
-      // Globe Latitudes (Parallels)
-      const latSteps = 6;
-      for (let j = 1; j < latSteps; j++) {
-        const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
-        
-        for (let k = 0; k <= 36; k++) {
-          const lon = (k / 36) * Math.PI * 2 + rotationAngle;
-          const x = globeRadius * Math.cos(lat) * Math.sin(lon);
-          const y = globeRadius * Math.sin(lat);
-          const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+        // Globe Longitudes (Meridians)
+        const lonSteps = 12; // increased density for detailed wireframe look
+        for (let j = 0; j < lonSteps; j++) {
+          const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
+          
+          for (let k = 0; k <= 24; k++) {
+            const lat = -Math.PI / 2 + (k / 24) * Math.PI;
+            const x = globeRadius * Math.cos(lat) * Math.sin(lon);
+            const y = globeRadius * Math.sin(lat);
+            const z = globeRadius * Math.cos(lat) * Math.cos(lon);
+
+            const rx = x;
+            const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
+            const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
+
+            ctx.strokeStyle = rz > 0 ? colors.globeFront : colors.globeBack;
+            ctx.lineWidth = rz > 0 ? 0.9 : 0.5;
+
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+
+            if (k === 0) {
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
+            } else {
+              ctx.lineTo(screenX, screenY);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY);
+            }
+          }
+        }
+
+        // --- ORBITING TELEMETRY TEXT LABELS (Más letras en el globo) ---
+        ctx.font = '600 8px "Fira Code", monospace';
+        globeOrbiters.forEach((orb) => {
+          // Calculate orbital rotation
+          const lon = orb.lon + rotationAngle * 0.8;
+          const x = (globeRadius + 12) * Math.cos(orb.lat) * Math.sin(lon);
+          const y = -(globeRadius + 12) * Math.sin(orb.lat);
+          const z = (globeRadius + 12) * Math.cos(orb.lat) * Math.cos(lon);
 
           const rx = x;
           const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
           const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
 
-          ctx.strokeStyle = rz > 0 ? colors.globeBack : 'rgba(0,0,0,0)'; // Hide back parallels entirely to make front continents stand out clearly
-          ctx.lineWidth = 0.5;
+          if (rz > 0) {
+            const screenX = globeCX + rx;
+            const screenY = globeCY + ry;
+            
+            // Faint lead dot on the surface
+            ctx.fillStyle = colors.orbiterTextColor;
+            ctx.fillRect(screenX - 1, screenY - 1, 2, 2);
 
-          const screenX = globeCX + rx;
-          const screenY = globeCY + ry;
-
-          if (k === 0) {
+            // Draw a tiny lead line
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
             ctx.beginPath();
             ctx.moveTo(screenX, screenY);
-          } else {
-            ctx.lineTo(screenX, screenY);
+            ctx.lineTo(screenX + 8, screenY - 4);
             ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(screenX, screenY);
+
+            // Label text
+            ctx.fillStyle = colors.orbiterTextColor;
+            ctx.fillText(orb.text, screenX + 11, screenY - 2);
           }
+        });
+
+        // --- DYNAMIC GEOLOCATION DOT TARGET ---
+        const latRad = (location.lat * Math.PI) / 180;
+        const lonRad = (location.lon * Math.PI) / 180 + rotationAngle;
+
+        const dotX = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
+        const dotY = -globeRadius * Math.sin(latRad);
+        const dotZ = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
+
+        const drx = dotX;
+        const dry = dotY * Math.cos(tilt) - dotZ * Math.sin(tilt);
+        const drz = dotY * Math.sin(tilt) + dotZ * Math.cos(tilt);
+
+        const lockColor = isDarkMode ? '#ef4444' : '#dc2626'; // Alert Red
+        const screenDotX = globeCX + drx;
+        const screenDotY = globeCY + dry;
+
+        if (drz > 0) {
+          // Point is on the front facing side
+          ctx.fillStyle = lockColor;
+          ctx.beginPath();
+          ctx.arc(screenDotX, screenDotY, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Outer HUD target reticle box around coordinates
+          ctx.strokeStyle = lockColor;
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(screenDotX - 8, screenDotY - 8, 16, 16);
+
+          // Draw tracking pointer line
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+          ctx.beginPath();
+          ctx.moveTo(screenDotX, screenDotY);
+          ctx.lineTo(screenDotX + 35, screenDotY - 20);
+          ctx.stroke();
+
+          // Coordinates detail box
+          ctx.font = '600 9px "Fira Code", monospace';
+          ctx.fillStyle = lockColor;
+          ctx.fillText(`LOC: ${location.country}`, screenDotX + 40, screenDotY - 25);
+          ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(19, 14, 36, 0.6)';
+          ctx.fillText(`${location.lat.toFixed(2)}N ${location.lon.toFixed(2)}E`, screenDotX + 40, screenDotY - 13);
+        } else {
+          // Point is on the back side (occluded) - draw a faint tracking helper
+          ctx.strokeStyle = isDarkMode ? 'rgba(239, 68, 68, 0.15)' : 'rgba(220, 38, 38, 0.15)';
+          ctx.setLineDash([2, 4]);
+          ctx.beginPath();
+          ctx.arc(screenDotX, screenDotY, 3, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
         }
-      }
-
-      // Globe Longitudes (Meridians)
-      const lonSteps = 8;
-      for (let j = 0; j < lonSteps; j++) {
-        const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
-        
-        for (let k = 0; k <= 24; k++) {
-          const lat = -Math.PI / 2 + (k / 24) * Math.PI;
-          const x = globeRadius * Math.cos(lat) * Math.sin(lon);
-          const y = globeRadius * Math.sin(lat);
-          const z = globeRadius * Math.cos(lat) * Math.cos(lon);
-
-          const rx = x;
-          const ry = y * Math.cos(tilt) - z * Math.sin(tilt);
-          const rz = y * Math.sin(tilt) + z * Math.cos(tilt);
-
-          ctx.strokeStyle = rz > 0 ? colors.globeBack : 'rgba(0,0,0,0)'; // Hide back meridians
-          ctx.lineWidth = 0.5;
-
-          const screenX = globeCX + rx;
-          const screenY = globeCY + ry;
-
-          if (k === 0) {
-            ctx.beginPath();
-            ctx.moveTo(screenX, screenY);
-          } else {
-            ctx.lineTo(screenX, screenY);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(screenX, screenY);
-          }
-        }
-      }
-
-      // --- DYNAMIC GEOLOCATION DOT TARGET ---
-      const latRad = (location.lat * Math.PI) / 180;
-      const lonRad = (location.lon * Math.PI) / 180 + rotationAngle;
-
-      const dotX = globeRadius * Math.cos(latRad) * Math.sin(lonRad);
-      const dotY = -globeRadius * Math.sin(latRad);
-      const dotZ = globeRadius * Math.cos(latRad) * Math.cos(lonRad);
-
-      const drx = dotX;
-      const dry = dotY * Math.cos(tilt) - dotZ * Math.sin(tilt);
-      const drz = dotY * Math.sin(tilt) + dotZ * Math.cos(tilt);
-
-      const lockColor = isDarkMode ? '#ef4444' : '#dc2626'; // Alert Red
-      const screenDotX = globeCX + drx;
-      const screenDotY = globeCY + dry;
-
-      if (drz > 0) {
-        // Point is on the front facing side
-        ctx.fillStyle = lockColor;
-        ctx.beginPath();
-        ctx.arc(screenDotX, screenDotY, 5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Outer HUD target reticle box around coordinates
-        ctx.strokeStyle = lockColor;
-        ctx.lineWidth = 1.2;
-        ctx.strokeRect(screenDotX - 8, screenDotY - 8, 16, 16);
-
-        // Draw tracking pointer line
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
-        ctx.beginPath();
-        ctx.moveTo(screenDotX, screenDotY);
-        ctx.lineTo(screenDotX + 35, screenDotY - 20);
-        ctx.stroke();
-
-        // Coordinates detail box
-        ctx.font = '600 9px "Fira Code", monospace';
-        ctx.fillStyle = lockColor;
-        ctx.fillText(`LOC: ${location.country}`, screenDotX + 40, screenDotY - 25);
-        ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(19, 14, 36, 0.6)';
-        ctx.fillText(`${location.lat.toFixed(2)}N ${location.lon.toFixed(2)}E`, screenDotX + 40, screenDotY - 13);
-      } else {
-        // Point is on the back side (occluded) - draw a faint tracking helper
-        ctx.strokeStyle = isDarkMode ? 'rgba(239, 68, 68, 0.15)' : 'rgba(220, 38, 38, 0.15)';
-        ctx.setLineDash([2, 4]);
-        ctx.beginPath();
-        ctx.arc(screenDotX, screenDotY, 3, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
       }
 
       // 5. Left and Right scrolling Hacking Hex Columns
