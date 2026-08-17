@@ -239,14 +239,14 @@ export default function CyberpunkBackground({ isDarkMode }) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, horizonY - 120, canvas.width, 260);
 
-      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (Aligned with User's Mockup) ---
-      const globeRadius = 220; // 220px radius (440px diameter!)
-      const globeCX = canvas.width - 200; // Positioned on the right side overlapping card
+      // --- GIANT HOLOGRAPHIC SATELLITE HUD WIDGET (500% Larger & Shifted 45% Left) ---
+      const globeRadius = 375; // 500% larger than original 75px!
+      const globeCX = canvas.width - 240 - (canvas.width * 0.45); // Shifted 45% to the left
       const globeCY = canvas.height * 0.48; // Centered vertically relative to the cards
       const tilt = 0.35; // tilt on X-axis (approx 20 deg)
 
       // Only render if screen is wide enough to prevent mobile collision
-      if (canvas.width > 900) {
+      if (canvas.width > 500) {
         rotationAngle += 0.005;
 
         // Concentric Rotating HUD Rings
@@ -255,18 +255,18 @@ export default function CyberpunkBackground({ isDarkMode }) {
         
         // Outer arc sweep
         ctx.beginPath();
-        ctx.arc(globeCX, globeCY, 290, rotationAngle, rotationAngle + Math.PI * 0.6);
+        ctx.arc(globeCX, globeCY, 450, rotationAngle, rotationAngle + Math.PI * 0.6);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(globeCX, globeCY, 290, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
+        ctx.arc(globeCX, globeCY, 450, rotationAngle + Math.PI, rotationAngle + Math.PI * 1.6);
         ctx.stroke();
 
         // Middle ring degree ticks
         for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
-          const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 250;
-          const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 250;
-          const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 260;
-          const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 260;
+          const startX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 410;
+          const startY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 410;
+          const endX = globeCX + Math.cos(angle + rotationAngle * 0.5) * 425;
+          const endY = globeCY + Math.sin(angle + rotationAngle * 0.5) * 425;
           ctx.beginPath();
           ctx.moveTo(startX, startY);
           ctx.lineTo(endX, endY);
@@ -274,9 +274,9 @@ export default function CyberpunkBackground({ isDarkMode }) {
         }
 
         // Inner dashed ring
-        ctx.setLineDash([4, 12]);
+        ctx.setLineDash([6, 14]);
         ctx.beginPath();
-        ctx.arc(globeCX, globeCY, 240, -rotationAngle, -rotationAngle + Math.PI * 2);
+        ctx.arc(globeCX, globeCY, 395, -rotationAngle, -rotationAngle + Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]); // Reset line dash
 
@@ -330,7 +330,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
         });
 
         // Globe Latitudes (Parallels)
-        const latSteps = 8;
+        const latSteps = 10;
         for (let j = 1; j < latSteps; j++) {
           const lat = -Math.PI / 2 + (j / latSteps) * Math.PI;
           
@@ -363,7 +363,7 @@ export default function CyberpunkBackground({ isDarkMode }) {
         }
 
         // Globe Longitudes (Meridians)
-        const lonSteps = 10;
+        const lonSteps = 12;
         for (let j = 0; j < lonSteps; j++) {
           const lon = (j / lonSteps) * Math.PI * 2 + rotationAngle;
           
