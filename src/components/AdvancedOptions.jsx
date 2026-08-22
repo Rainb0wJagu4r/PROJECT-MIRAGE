@@ -8,8 +8,7 @@ import {
   Binary, 
   Database,
   Lock,
-  FileWarning,
-  Image
+  FileWarning
 } from 'lucide-react';
 import PathInput from './PathInput';
 
@@ -40,10 +39,6 @@ const optTrans = {
     shredOption1: "1 pasada (Rápido)",
     shredOption3: "3 pasadas (Estándar Seguro)",
     shredOption7: "7 pasadas (Estándar Militar DoD 5220.22-M)",
-    stegTitle: "Ocultar Cifrado en Imagen (Steganography)",
-    stegDesc: "Esconde el archivo cifrado dentro del espacio final de una imagen portadora (PNG/JPEG) seleccionada.",
-    stegCarrierLabel: "Ruta de la Imagen Portadora (Dejar vacío para usar una imagen por defecto)",
-    stegCarrierPlaceholder: "Ej: /Users/brx/Pictures/vacaciones.png",
   },
   en: {
     header: "ADDITIONAL ARMOR & SECURITY",
@@ -71,10 +66,6 @@ const optTrans = {
     shredOption1: "1 pass (Fast)",
     shredOption3: "3 passes (Secure Standard)",
     shredOption7: "7 passes (DoD 5220.22-M Military Standard)",
-    stegTitle: "Hide Encryption in Image (Steganography)",
-    stegDesc: "Conceals the encrypted file inside the trailing EOF boundary of a chosen carrier image (PNG/JPEG).",
-    stegCarrierLabel: "Carrier Image File Path (Leave blank to use a default placeholder image)",
-    stegCarrierPlaceholder: "E.g., /Users/brx/Pictures/vacation.png",
   }
 };
 
@@ -260,33 +251,6 @@ export default function AdvancedOptions({ settings, setSetting, lang = 'es' }) {
                 <option value="7">{t.shredOption7}</option>
               </select>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* 8. Steganography */}
-      <div className={`armor-card ${settings.steganographyEnabled ? 'active' : ''}`}>
-        <div className="armor-row" onClick={() => toggleSetting('steganographyEnabled')}>
-          <div className="armor-info">
-            <Image className="armor-icon" size={20} />
-            <div>
-              <div className="armor-label-title">{t.stegTitle}</div>
-              <div className="armor-label-desc">{t.stegDesc}</div>
-            </div>
-          </div>
-          <div className="switch-control">
-            <div className="switch-knob" />
-          </div>
-        </div>
-        {settings.steganographyEnabled && (
-          <div className="armor-subfields">
-            <PathInput
-              value={settings.carrierPath}
-              onChange={(val) => setSetting('carrierPath', val)}
-              placeholder={t.stegCarrierPlaceholder}
-              label={t.stegCarrierLabel}
-              icon={Image}
-            />
           </div>
         )}
       </div>

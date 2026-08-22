@@ -15,13 +15,22 @@ import {
   Moon,
   Globe,
   Copy,
-  Check
+  Check,
+  LayoutDashboard,
+  Activity,
+  HardDrive,
+  Terminal,
+  Settings,
+  AlertCircle,
+  ShieldCheck,
+  Image
 } from 'lucide-react';
 import Dropzone from './components/Dropzone';
 import AdvancedOptions from './components/AdvancedOptions';
 import PathInput from './components/PathInput';
 import ProcessingOverlay from './components/ProcessingOverlay';
 import CyberpunkBackground from './components/CyberpunkBackground';
+import StegoConsole from './components/StegoConsole';
 import tokenData from './token.json';
 
 // Translations Dictionary
@@ -121,7 +130,22 @@ const translations = {
     carrierFileLabel: "Imagen Portadora (Arrastra o ingresa ruta)",
     defaultCarrierLabel: "Usar imagen transparente por defecto",
     stegOutput: "Esteganografía:",
-    stegActive: "✓ Activo (Oculto en Imagen)"
+    stegActive: "✓ Activo (Oculto en Imagen)",
+    
+    stegoTitle: "Ocultación Esteganográfica",
+    stegoDesc: "Cifra y oculta tus archivos de manera invisible dentro de imágenes portadoras PNG/JPEG sin alterar la visualización de la imagen.",
+    stegoConsole: "CONSOLA DE ESTEGANOGRAFÍA",
+    navDashboard: "Panel Principal",
+    navEncrypt: "Cifrar Archivo",
+    navDecrypt: "Descifrar Archivo",
+    navStego: "Esteganografía",
+    navMonitor: "MONITOR DE SISTEMA",
+    navServerStatus: "Estado del Servidor",
+    navMemoryLoad: "Carga de Memoria",
+    navUptime: "Tiempo en Línea",
+    navVersion: "Versión",
+    navWorkspaceStatus: "Espacio de Trabajo",
+    navWorkspaceActive: "Activo"
   },
   en: {
     brandSubtitle: "Symmetric AES-256-GCM / Mirage-C4 Cryptography with .wraith extension and Military Armor",
@@ -218,7 +242,22 @@ const translations = {
     carrierFileLabel: "Carrier Image (Drag-and-drop or type path)",
     defaultCarrierLabel: "Use default transparent carrier image",
     stegOutput: "Steganography:",
-    stegActive: "✓ Active (Hidden in Image)"
+    stegActive: "✓ Active (Hidden in Image)",
+    
+    stegoTitle: "Steganographic Concealment",
+    stegoDesc: "Encrypt and conceal files invisibly within PNG/JPEG carrier images without affecting image presentation.",
+    stegoConsole: "STEGANOGRAPHY CONSOLE",
+    navDashboard: "Main Dashboard",
+    navEncrypt: "Encrypt File",
+    navDecrypt: "Decrypt File",
+    navStego: "Steganography",
+    navMonitor: "SYSTEM MONITOR",
+    navServerStatus: "Server Status",
+    navMemoryLoad: "Memory Load",
+    navUptime: "Uptime",
+    navVersion: "Version",
+    navWorkspaceStatus: "Workspace",
+    navWorkspaceActive: "Active"
   }
 };
 
@@ -244,6 +283,13 @@ export default function App() {
   
   // System Info
   const [systemInfo, setSystemInfo] = useState(null);
+  const [systemStatus, setSystemStatus] = useState({
+    status: 'connecting',
+    uptime: 0,
+    memory: { rss: 0, heapUsed: 0 },
+    version: '1.0.0',
+    upToDate: true
+  });
 
   // Load system info on startup
   useEffect(() => {
@@ -253,6 +299,24 @@ export default function App() {
       .then(res => res.json())
       .then(data => setSystemInfo(data))
       .catch(err => console.error('Failed to load system info:', err));
+  }, []);
+
+  // Poll system status periodically
+  useEffect(() => {
+    const fetchStatus = () => {
+      fetch('/api/system-status', {
+        headers: { 'X-API-Token': tokenData.token }
+      })
+        .then(res => res.json())
+        .then(data => setSystemStatus(data))
+        .catch(err => {
+          console.error('Failed to load status:', err);
+          setSystemStatus(prev => ({ ...prev, status: 'offline' }));
+        });
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   // Handle body theme class toggle
@@ -615,47 +679,124 @@ export default function App() {
   return (
     <>
       <CyberpunkBackground isDarkMode={isDarkMode} />
-      <div className="app-container">
-      {/* Settings / Controls Bar */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '-10px', zIndex: 10 }}>
-        <button 
-          type="button" 
-          className="btn-secondary" 
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
-        >
-          {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
-          {isDarkMode ? t.btnThemeLight : t.btnThemeDark}
-        </button>
-        <button 
-          type="button" 
-          className="btn-secondary" 
-          onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
-        >
-          <Globe size={14} />
-          {t.btnLang}
-        </button>
-      </div>
+      
+      <div className="app-layout-wrapper">
+        {/* Left Sidebar Panel */}
+        <aside className="sidebar-panel">
+          <div>
+            <div className="sidebar-brand">
+              <Shield size={22} className="brand-logo-icon" style={{ color: 'var(--color-primary)' }} />
+              PROJECT MIRAGE
+            </div>
+            
+            <nav>
+              <div className="sidebar-section-title">{lang === 'es' ? 'Navegación' : 'Navigation'}</div>
+              <ul className="sidebar-nav-list">
+                <li 
+                  className={`sidebar-nav-item ${screen === 'dashboard' ? 'active' : ''}`}
+                  onClick={() => { resetForms(); setScreen('dashboard'); }}
+                >
+                  <LayoutDashboard size={18} className="sidebar-nav-icon" />
+                  {t.navDashboard}
+                </li>
+                <li 
+                  className={`sidebar-nav-item ${screen === 'encrypt' ? 'active' : ''}`}
+                  onClick={() => { resetForms(); setScreen('encrypt'); }}
+                >
+                  <Lock size={18} className="sidebar-nav-icon" />
+                  {t.navEncrypt}
+                </li>
+                <li 
+                  className={`sidebar-nav-item ${screen === 'decrypt' ? 'active' : ''}`}
+                  onClick={() => { resetForms(); setScreen('decrypt'); }}
+                >
+                  <Unlock size={18} className="sidebar-nav-icon" />
+                  {t.navDecrypt}
+                </li>
+                <li 
+                  className={`sidebar-nav-item ${screen === 'stego' ? 'active' : ''}`}
+                  onClick={() => { resetForms(); setScreen('stego'); }}
+                >
+                  <Image size={18} className="sidebar-nav-icon" />
+                  {t.navStego}
+                </li>
+              </ul>
+            </nav>
 
-      {/* Brand Header */}
-      <header className="app-header">
-        <h1 className="brand-title">
-          PROJECT MIRAGE
-        </h1>
-        <p className="brand-subtitle">
-          {t.brandSubtitle}
-        </p>
-        {systemInfo && (
-          <div style={{ marginTop: '10px', fontSize: '0.75rem', color: 'var(--text-dark)', fontFamily: 'var(--font-mono)' }}>
-            HOST: {systemInfo.hostname} ({systemInfo.platform}) | HW UUID: {systemInfo.uuid.substring(0, 18)}...
+            <div>
+              <div className="sidebar-section-title">{t.navMonitor}</div>
+              <div className="status-monitor-widget">
+                <div className="monitor-row">
+                  <span className="monitor-key">{t.navServerStatus}</span>
+                  <span className="monitor-val" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span 
+                      className="pulse-indicator" 
+                      style={{ 
+                        backgroundColor: systemStatus.status === 'online' ? 'var(--color-green)' : (systemStatus.status === 'connecting' ? 'var(--color-cyan)' : 'var(--color-red)'),
+                        boxShadow: systemStatus.status === 'online' ? '0 0 8px var(--color-green-glow)' : (systemStatus.status === 'connecting' ? '0 0 8px var(--color-cyan-glow)' : '0 0 8px var(--color-red-glow)')
+                      }} 
+                    />
+                    {systemStatus.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="monitor-row">
+                  <span className="monitor-key">{t.navMemoryLoad}</span>
+                  <span className="monitor-val" style={{ color: 'var(--color-cyan)' }}>
+                    {systemStatus.memory.rss ? `${systemStatus.memory.rss} MB` : 'OFFLINE'}
+                  </span>
+                </div>
+                <div className="monitor-row">
+                  <span className="monitor-key">{t.navUptime}</span>
+                  <span className="monitor-val">
+                    {systemStatus.uptime ? `${systemStatus.uptime}s` : '-'}
+                  </span>
+                </div>
+                <div className="monitor-row">
+                  <span className="monitor-key">{t.navVersion}</span>
+                  <span className="monitor-val" style={{ color: 'var(--text-dark)' }}>{systemStatus.version}</span>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-      </header>
+
+          <div className="sidebar-footer-controls">
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', width: '100%', justifyContent: 'center' }}
+            >
+              {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
+              {isDarkMode ? t.btnThemeLight : t.btnThemeDark}
+            </button>
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', width: '100%', justifyContent: 'center' }}
+            >
+              <Globe size={14} />
+              {t.btnLang}
+            </button>
+          </div>
+        </aside>
+
+        <div className="app-container">
+          {/* Brand Header */}
+          <header className="app-header">
+            <p className="brand-subtitle">
+              {t.brandSubtitle}
+            </p>
+            {systemInfo && (
+              <div style={{ marginTop: '10px', fontSize: '0.75rem', color: 'var(--text-dark)', fontFamily: 'var(--font-mono)' }}>
+                HOST: {systemInfo.hostname} ({systemInfo.platform}) | HW UUID: {systemInfo.uuid.substring(0, 18)}...
+              </div>
+            )}
+          </header>
 
       {/* 1. Dashboard View */}
       {screen === 'dashboard' && (
-        <main className="dashboard-grid">
+        <main className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
           <div className="mode-card encrypt-card" onClick={() => setScreen('encrypt')}>
             <div className="mode-icon-wrapper">
               <Lock size={44} />
@@ -675,7 +816,42 @@ export default function App() {
               {t.decryptDesc}
             </p>
           </div>
+
+          <div className="mode-card stego-card" onClick={() => setScreen('stego')} style={{ borderColor: 'var(--color-cyan)' }}>
+            <div className="mode-icon-wrapper" style={{ color: 'var(--color-cyan)' }}>
+              <Image size={44} />
+            </div>
+            <h2 className="mode-title">{t.stegoTitle}</h2>
+            <p className="mode-desc">
+              {t.stegoDesc}
+            </p>
+          </div>
         </main>
+      )}
+
+      {/* Steganography View */}
+      {screen === 'stego' && (
+        <StegoConsole
+          t={t}
+          lang={lang}
+          onBack={resetForms}
+          onStartProcessing={(title) => {
+            setProcessingTitle(title);
+            setIsProcessing(true);
+            setProcessingError(null);
+            setProcessingSteps([]);
+          }}
+          onFinishProcessing={(err) => {
+            if (err) {
+              setProcessingError(err);
+            } else {
+              setIsProcessing(false);
+            }
+          }}
+          onProcessingStep={(step) => {
+            setProcessingSteps(prev => [...prev, step]);
+          }}
+        />
       )}
 
       {/* 2. Encrypt View */}
@@ -1295,7 +1471,8 @@ export default function App() {
       <footer style={{ marginTop: 'auto', paddingTop: '40px', paddingBottom: '20px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-dark)', fontFamily: 'var(--font-outfit)', letterSpacing: '0.5px' }}>
         Made with ♥️ by MDVsecurity from 🇲🇽
       </footer>
-    </div>
+        </div>
+      </div>
     </>
   );
 }

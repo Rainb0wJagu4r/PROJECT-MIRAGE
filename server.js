@@ -340,6 +340,21 @@ app.get('/api/system-info', (req, res) => {
   });
 });
 
+// System Status / Monitor API
+app.get('/api/system-status', (req, res) => {
+  const memoryUsage = process.memoryUsage();
+  res.json({
+    status: 'online',
+    uptime: Math.floor(process.uptime()),
+    memory: {
+      rss: Math.round(memoryUsage.rss / (1024 * 1024)),
+      heapUsed: Math.round(memoryUsage.heapUsed / (1024 * 1024))
+    },
+    version: '1.0.0',
+    upToDate: true
+  });
+});
+
 // File system autocomplete helper API for local UX
 app.get('/api/autocomplete', (req, res) => {
   let queryPath = req.query.path || '';
