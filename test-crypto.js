@@ -12,7 +12,10 @@ import {
   deriveKey,
   applySizePadding,
   serializePayload,
-  deserializePayload
+  deserializePayload,
+  encryptMirageC4,
+  decryptMirageC4,
+  applySteganography
 } from './server.js';
 
 console.log('🧪 Starting Project Mirage Cryptographic Core Tests...\n');
@@ -185,7 +188,7 @@ try {
 
 // Test 6: Shredder
 try {
-  const tempFile = path.join('/tmp', `shred_test_${Date.now()}.txt`);
+  const tempFile = path.join(process.cwd(), `shred_test_${Date.now()}.txt`);
   fs.writeFileSync(tempFile, 'WIPE_ME_COMPLETELY_PLEASE_CONFIDENTIAL');
   
   assert(fs.existsSync(tempFile), 'Temporary file created for shred test');
@@ -193,6 +196,68 @@ try {
   assert(!fs.existsSync(tempFile), 'Secure shredder successfully overwrites and unlinks the file');
 } catch (e) {
   assert(false, `Test 6 (Shredder) failed: ${e.message}`);
+}
+
+// Test 7: Mirage-C4 Cascaded Cipher & Steganography
+try {
+  const password = 'DecentralizedHackerCascadePassword!';
+  const salt = crypto.randomBytes(16);
+  
+  // 1. Extended KDF test (1024-bit key)
+  const key1024 = deriveKey(password, salt, false, '', 128);
+  assert(key1024.length === 128, 'KDF extended derivation produces 1024-bit (128 bytes) key');
+
+  // 2. Mirage-C4 encryption and decryption test
+  const ivs = {
+    ivCamellia: crypto.randomBytes(16),
+    ivAria: crypto.randomBytes(16),
+    ivChaCha: crypto.randomBytes(16),
+    ivAes: crypto.randomBytes(12)
+  };
+  const payloadBuf = Buffer.from('Quantum-resistant cascading encryption test payload.', 'utf8');
+  
+  const { ciphertext, tag } = encryptMirageC4(payloadBuf, key1024, ivs);
+  assert(ciphertext.length === payloadBuf.length, 'Mirage-C4 encrypt preserves payload length (CTR/stream cascade)');
+  
+  const decrypted = decryptMirageC4(ciphertext, key1024, ivs, tag);
+  assert(decrypted.toString('utf8') === payloadBuf.toString('utf8'), 'Mirage-C4 decrypt successfully restores original payload');
+
+  // 3. Steganography hiding and recovery test
+  const fakeCarrier = Buffer.from('FAKE_PNG_CARRIER_IMAGE_BYTES_1234567890', 'utf8');
+  const tempCarrierFile = path.join(process.cwd(), `temp_carrier_${Date.now()}.png`);
+  fs.writeFileSync(tempCarrierFile, fakeCarrier);
+
+  const payloadToHide = Buffer.from('HIDDEN_DATA_12345', 'utf8');
+  
+  // Hide payload in image
+  const steganographed = applySteganography(tempCarrierFile, payloadToHide, () => {});
+  assert(steganographed.length === fakeCarrier.length + payloadToHide.length + 12, 'Steganography buffer size matches carrier + payload + footer metadata');
+
+  // Recover payload from steganography buffer
+  let recoveredPayload = null;
+  if (steganographed.length >= 12) {
+    const signature = steganographed.subarray(-8).toString('ascii');
+    assert(signature === 'MIRGSTEG', 'Steganography trailer signature is MIRGSTEG');
+    
+    if (signature === 'MIRGSTEG') {
+      const payloadLen = steganographed.readUInt32BE(steganographed.length - 12);
+      assert(payloadLen === payloadToHide.length, 'Steganography decoded payload length matches original');
+      
+      recoveredPayload = steganographed.subarray(
+        steganographed.length - 12 - payloadLen,
+        steganographed.length - 12
+      );
+    }
+  }
+  
+  assert(recoveredPayload && recoveredPayload.toString('utf8') === payloadToHide.toString('utf8'), 'Steganography successfully extracts and matches the hidden payload');
+  
+  // Cleanup temp carrier file
+  if (fs.existsSync(tempCarrierFile)) {
+    fs.unlinkSync(tempCarrierFile);
+  }
+} catch (e) {
+  assert(false, `Test 7 (Mirage-C4 and Steganography) failed: ${e.message}`);
 }
 
 console.log(`\n========================================`);

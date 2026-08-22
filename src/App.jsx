@@ -27,9 +27,9 @@ import tokenData from './token.json';
 // Translations Dictionary
 const translations = {
   es: {
-    brandSubtitle: "Cifrado Simétrico AES-256-GCM con Extensión .wraith y Blindaje Militar",
+    brandSubtitle: "Cifrado Simétrico AES-256-GCM / Mirage-C4 con Extensión .wraith y Blindaje Militar",
     encryptTitle: "Cifrar y Blindar",
-    encryptDesc: "Aplica cifrado AES-256 blindado a un archivo con metadatos depurados, ofuscación, bloqueo de hardware y llaves señuelo.",
+    encryptDesc: "Aplica cifrado AES-256 o Mirage-C4 blindado a un archivo con metadatos depurados, ofuscación, bloqueo de hardware y llaves señuelo.",
     decryptTitle: "Descifrar y Restaurar",
     decryptDesc: "Restaura un archivo cifrado (.wraith) o recombina fragmentos de datos divididos verificando firmas criptográficas.",
     // Encrypt console
@@ -50,7 +50,7 @@ const translations = {
     decryptConsole: "CONSOLA DE DESCIFRADO",
     recombineLabel: "Recombinar Fragmentos (2-of-3 Split)",
     recombineDesc: "Marca esto si el archivo fue dividido en 3 partes y necesitas recombinarlas.",
-    encryptedFilePath: "Ruta del Archivo Cifrado (.wraith)",
+    encryptedFilePath: "Ruta del Archivo Cifrado",
     partPathsLabel: "Rutas de los Fragmentos (Ingresa al menos 2 partes)",
     partPlaceholder: "Fragmento",
     addPartBtn: "+ Agregar Ruta de Fragmento",
@@ -63,7 +63,7 @@ const translations = {
     // Success screens
     successEncrypt: "CIFRADO COMPLETADO",
     successDecrypt: "DESCIFRADO COMPLETADO",
-    successEncryptDesc: "El archivo ha sido cifrado con AES-256-GCM y blindado exitosamente.",
+    successEncryptDesc: "El archivo ha sido cifrado y blindado exitosamente.",
     successDecryptDesc: "La firma de integridad ha sido verificada y el archivo original fue restaurado.",
     outputFiles: "Archivos de Salida:",
     inputHash: "SHA3 Entrada:",
@@ -73,7 +73,7 @@ const translations = {
     filename: "Nombre del Archivo:",
     fileSize: "Tamaño del Archivo:",
     integrityCheck: "Verificación de Integridad:",
-    passed: "✓ PASADA (GCM Tag válido)",
+    passed: "✓ PASADA (Integridad válida)",
     hwPepper: "Pepper de Hardware:",
     linkedHost: "✓ Vinculado a este equipo",
     anotherOp: "Realizar otra operación",
@@ -83,8 +83,8 @@ const translations = {
     clickExplore: "o haz clic para explorar tus archivos locales",
     pendingHash: "Pendiente...",
     hashInputLabel: "HASH ENTRADA (SHA3-256)",
-    hashOutputLabel: "HASH SALIDA .WRAITH (SHA3-256)",
-    hashDecryptInputLabel: "HASH ENTRADA .WRAITH (SHA3-256)",
+    hashOutputLabel: "HASH SALIDA CIFRADO (SHA3-256)",
+    hashDecryptInputLabel: "HASH ENTRADA CIFRADO (SHA3-256)",
     hashDecryptOutputLabel: "HASH SALIDA (SHA3-256)",
     // Stats card
     decryptSpecs: "ESPECIFICACIONES DE DESCIFRADO",
@@ -106,17 +106,29 @@ const translations = {
     errorNoFile: "Debes arrastrar un archivo o ingresar una ruta de archivo local.",
     errorNoPassword: "La contraseña es requerida.",
     errorPartsCount: "Debes ingresar al menos 2 rutas de fragmentos para recombinar.",
-    errorNoDecFile: "Debes ingresar la ruta del archivo cifrado (.wraith).",
+    errorNoDecFile: "Debes ingresar la ruta del archivo cifrado.",
     btnThemeLight: "Modo Claro",
     btnThemeDark: "Modo Oscuro",
-    btnLang: "English"
+    btnLang: "English",
+    
+    // New translations for algorithm and steganography
+    algorithmLabel: "Algoritmo Core",
+    algorithmPlaceholder: "Selecciona el algoritmo...",
+    aesDescription: "AES-256-GCM es el estándar de la industria. Cifrado simétrico de alta velocidad con etiquetas de autenticación AEAD de 128 bits para prevenir manipulaciones físicas o lógicas.",
+    c4Description: "Mirage-C4 es un algoritmo de cifrado en cascada de 1024 bits. Une de forma secuencial Camellia-256-CTR, ARIA-256-CTR, ChaCha20 y AES-256-GCM, derivando claves individuales para cada capa con Scrypt.",
+    stegLabel: "Esteganografía (Ocultar Cifrado)",
+    stegDesc: "Inyecta el payload cifrado en el espacio sobrante (EOF) de una imagen portadora (PNG/JPEG). La imagen permanece 100% visible.",
+    carrierFileLabel: "Imagen Portadora (Arrastra o ingresa ruta)",
+    defaultCarrierLabel: "Usar imagen transparente por defecto",
+    stegOutput: "Esteganografía:",
+    stegActive: "✓ Activo (Oculto en Imagen)"
   },
   en: {
-    brandSubtitle: "Symmetric AES-256-GCM Cryptography with .wraith extension and Military Armor",
+    brandSubtitle: "Symmetric AES-256-GCM / Mirage-C4 Cryptography with .wraith extension and Military Armor",
     encryptTitle: "Encrypt & Arm",
-    encryptDesc: "Apply armored AES-256 encryption to a file with scrubbed metadata, obfuscation, hardware lock, and decoy keys.",
+    encryptDesc: "Apply armored AES-256 or Mirage-C4 encryption to a file with scrubbed metadata, obfuscation, hardware lock, and decoy keys.",
     decryptTitle: "Decrypt & Restore",
-    decryptDesc: "Restore an encrypted file (.wraith) or recombine split data fragments verifying cryptographic signatures.",
+    decryptDesc: "Restore an encrypted file or recombine split data fragments verifying cryptographic signatures.",
     // Encrypt console
     encryptConsole: "ENCRYPTION CONSOLE",
     fileToEncrypt: "File to Encrypt (Drag-and-drop or type path)",
@@ -135,7 +147,7 @@ const translations = {
     decryptConsole: "DECRYPTION CONSOLE",
     recombineLabel: "Recombine Fragments (2-of-3 Split)",
     recombineDesc: "Check this if the file was split into 3 parts and you need to recombine them.",
-    encryptedFilePath: "Encrypted File Path (.wraith)",
+    encryptedFilePath: "Encrypted File Path",
     partPathsLabel: "Fragment Paths (Enter at least 2 parts)",
     partPlaceholder: "Fragment",
     addPartBtn: "+ Add Fragment Path",
@@ -148,7 +160,7 @@ const translations = {
     // Success screens
     successEncrypt: "ENCRYPTION COMPLETED",
     successDecrypt: "DECRYPTION COMPLETED",
-    successEncryptDesc: "The file was successfully encrypted with AES-256-GCM and armored.",
+    successEncryptDesc: "The file was successfully encrypted and armored.",
     successDecryptDesc: "Integrity signature has been verified and the original file has been restored.",
     outputFiles: "Output Files:",
     inputHash: "SHA3 Input:",
@@ -158,7 +170,7 @@ const translations = {
     filename: "File Name:",
     fileSize: "File Size:",
     integrityCheck: "Integrity Check:",
-    passed: "✓ PASSED (GCM Tag is valid)",
+    passed: "✓ PASSED (Integrity is valid)",
     hwPepper: "Hardware Pepper:",
     linkedHost: "✓ Bound to this host",
     anotherOp: "Perform another operation",
@@ -168,8 +180,8 @@ const translations = {
     clickExplore: "or click to browse local files",
     pendingHash: "Pending...",
     hashInputLabel: "INPUT HASH (SHA3-256)",
-    hashOutputLabel: "OUTPUT HASH .WRAITH (SHA3-256)",
-    hashDecryptInputLabel: "INPUT HASH .WRAITH (SHA3-256)",
+    hashOutputLabel: "OUTPUT HASH ENCRYPTED (SHA3-256)",
+    hashDecryptInputLabel: "INPUT HASH ENCRYPTED (SHA3-256)",
     hashDecryptOutputLabel: "OUTPUT HASH (SHA3-256)",
     // Stats card
     decryptSpecs: "DECRYPTION SPECIFICATIONS",
@@ -191,10 +203,22 @@ const translations = {
     errorNoFile: "You must drag a file or enter a local file path.",
     errorNoPassword: "Password is required.",
     errorPartsCount: "You must enter at least 2 fragment paths to recombine.",
-    errorNoDecFile: "You must enter the encrypted file path (.wraith).",
+    errorNoDecFile: "You must enter the encrypted file path.",
     btnThemeLight: "Light Mode",
     btnThemeDark: "Dark Mode",
-    btnLang: "Español"
+    btnLang: "Español",
+    
+    // New translations for algorithm and steganography
+    algorithmLabel: "Core Algorithm",
+    algorithmPlaceholder: "Select algorithm...",
+    aesDescription: "AES-256-GCM is the industry standard. High-speed symmetric encryption with 128-bit AEAD authentication tags to detect physical or logical tampering.",
+    c4Description: "Mirage-C4 is a 1024-bit cascaded symmetric cipher. It sequentially chains Camellia-256-CTR, ARIA-256-CTR, ChaCha20, and AES-256-GCM, deriving individual keys via Scrypt for each layer.",
+    stegLabel: "Steganography (Hide Payload)",
+    stegDesc: "Inject the encrypted payload into the trailing EOF space of a carrier image (PNG/JPEG). The image remains 100% viewable.",
+    carrierFileLabel: "Carrier Image (Drag-and-drop or type path)",
+    defaultCarrierLabel: "Use default transparent carrier image",
+    stegOutput: "Steganography:",
+    stegActive: "✓ Active (Hidden in Image)"
   }
 };
 
@@ -375,7 +399,10 @@ export default function App() {
           duressDecoyPath: encSettings.duressDecoyPath,
           splitFragmentEnabled: encSettings.splitFragmentEnabled,
           shredOriginalEnabled: false,
-          outputPath: encOutputPath
+          outputPath: encOutputPath,
+          algorithm: encSettings.algorithm,
+          steganographyEnabled: encSettings.steganographyEnabled,
+          carrierPath: encSettings.carrierPath
         };
 
         const headers = {
@@ -419,7 +446,10 @@ export default function App() {
               splitFragmentEnabled: encSettings.splitFragmentEnabled,
               shredOriginalEnabled: encSettings.shredOriginalEnabled,
               shredPasses: encSettings.shredPasses,
-              outputPath: encOutputPath
+              outputPath: encOutputPath,
+              algorithm: encSettings.algorithm,
+              steganographyEnabled: encSettings.steganographyEnabled,
+              carrierPath: encSettings.carrierPath
             }
           })
         });
@@ -445,7 +475,9 @@ export default function App() {
           inputHash: data.inputHash,
           outputHash: data.outputHash,
           split: encSettings.splitFragmentEnabled,
-          hint: encPasswordHint
+          hint: encPasswordHint,
+          algorithm: encSettings.algorithm,
+          steganography: encSettings.steganographyEnabled
         });
         setIsProcessing(false);
         setScreen('success');
@@ -515,7 +547,9 @@ export default function App() {
           filename: data.filename,
           fileSize: data.fileSize,
           outputHash: data.outputHash,
-          hwLocked: data.hardwareLockVerified
+          hwLocked: data.hardwareLockVerified,
+          algorithm: data.algorithm,
+          steganography: data.steganography
         });
         setIsProcessing(false);
         setScreen('success');
@@ -680,6 +714,32 @@ export default function App() {
                   label={t.orLocalPath}
                 />
               )}
+
+              {/* Core Algorithm Selector & Info HUD */}
+              <div className="form-group">
+                <label className="form-label">{t.algorithmLabel}</label>
+                <select
+                  className="form-input"
+                  style={{ paddingLeft: '14px', background: 'rgba(0, 0, 0, 0.35)', color: 'var(--text-light)', border: '1px solid rgba(255, 255, 255, 0.15)', cursor: 'pointer' }}
+                  value={encSettings.algorithm || 'aes-256-gcm'}
+                  onChange={(e) => handleEncSettingChange('algorithm', e.target.value)}
+                >
+                  <option value="aes-256-gcm">AES-256-GCM ({t.btnLang === 'English' ? 'Estándar' : 'Standard'})</option>
+                  <option value="mirage-c4">Mirage-C4 (1024-bit Cascade)</option>
+                </select>
+                <div style={{
+                  marginTop: '8px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px dashed rgba(255, 255, 255, 0.08)',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  lineHeight: '1.4',
+                  color: 'var(--text-muted)'
+                }}>
+                  {(encSettings.algorithm || 'aes-256-gcm') === 'mirage-c4' ? t.c4Description : t.aesDescription}
+                </div>
+              </div>
 
               <div className="form-group">
                 <label className="form-label">{t.passwordLabel}</label>
@@ -1120,6 +1180,18 @@ export default function App() {
                       <span className="result-val" style={{ fontStyle: 'italic' }}>"{successData.hint}"</span>
                     </div>
                   )}
+                  <div className="result-row">
+                    <span className="result-key">{t.algoCore}</span>
+                    <span className="result-val" style={{ color: 'var(--color-cyan)' }}>
+                      {successData.algorithm === 'mirage-c4' ? 'Mirage-C4 (1024-bit Cascade)' : 'AES-256-GCM'}
+                    </span>
+                  </div>
+                  {successData.steganography && (
+                    <div className="result-row">
+                      <span className="result-key">{t.stegOutput}</span>
+                      <span className="result-val" style={{ color: 'var(--color-cyan)' }}>{t.stegActive}</span>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -1165,6 +1237,18 @@ export default function App() {
                     <span className="result-key">{t.integrityCheck}</span>
                     <span className="result-val" style={{ color: 'var(--color-green)' }}>{t.passed}</span>
                   </div>
+                  <div className="result-row">
+                    <span className="result-key">{t.algoCore}</span>
+                    <span className="result-val" style={{ color: 'var(--color-cyan)' }}>
+                      {successData.algorithm === 'mirage-c4' ? 'Mirage-C4 (1024-bit Cascade)' : 'AES-256-GCM'}
+                    </span>
+                  </div>
+                  {successData.steganography && (
+                    <div className="result-row">
+                      <span className="result-key">{t.stegOutput}</span>
+                      <span className="result-val" style={{ color: 'var(--color-cyan)' }}>{t.stegActive}</span>
+                    </div>
+                  )}
                   {successData.hwLocked && (
                     <div className="result-row">
                       <span className="result-key">{t.hwPepper}</span>
