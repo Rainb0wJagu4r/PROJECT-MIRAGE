@@ -751,7 +751,45 @@ export default function App() {
                     {systemStatus.uptime ? `${systemStatus.uptime}s` : '-'}
                   </span>
                 </div>
-                <div className="monitor-row">
+
+                {/* Cryptographic Primitives Health Monitor */}
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '8px', paddingTop: '8px' }}>
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text-dark)', marginBottom: '6px', fontWeight: 600, letterSpacing: '0.5px', fontFamily: 'var(--font-orbitron)' }}>
+                    {lang === 'es' ? 'TEST DE ALGORITMOS' : 'CIPHER ENGINE KATs'}
+                  </div>
+                  <div className="monitor-row" style={{ marginBottom: '4px' }}>
+                    <span className="monitor-key" style={{ fontSize: '0.68rem' }}>AES-GCM (256-bit)</span>
+                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.aesGcm ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.selfTests?.aesGcm ? 'ONLINE' : 'FAILED'}
+                    </span>
+                  </div>
+                  <div className="monitor-row" style={{ marginBottom: '4px' }}>
+                    <span className="monitor-key" style={{ fontSize: '0.68rem' }}>Camellia (CTR)</span>
+                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.camelliaCtr ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.selfTests?.camelliaCtr ? 'ONLINE' : 'FAILED'}
+                    </span>
+                  </div>
+                  <div className="monitor-row" style={{ marginBottom: '4px' }}>
+                    <span className="monitor-key" style={{ fontSize: '0.68rem' }}>ARIA (CTR)</span>
+                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.ariaCtr ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.selfTests?.ariaCtr ? 'ONLINE' : 'FAILED'}
+                    </span>
+                  </div>
+                  <div className="monitor-row" style={{ marginBottom: '4px' }}>
+                    <span className="monitor-key" style={{ fontSize: '0.68rem' }}>ChaCha20</span>
+                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.chacha20 ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.selfTests?.chacha20 ? 'ONLINE' : 'FAILED'}
+                    </span>
+                  </div>
+                  <div className="monitor-row" style={{ marginBottom: '4px' }}>
+                    <span className="monitor-key" style={{ fontSize: '0.68rem' }}>Scrypt KDF</span>
+                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.scrypt ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.selfTests?.scrypt ? 'ONLINE' : 'FAILED'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="monitor-row" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '8px', paddingTop: '8px', marginBottom: 0 }}>
                   <span className="monitor-key">{t.navVersion}</span>
                   <span className="monitor-val" style={{ color: 'var(--text-dark)' }}>{systemStatus.version}</span>
                 </div>

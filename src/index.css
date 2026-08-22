@@ -1144,7 +1144,8 @@ body {
 /* Adjust app-container for layout flex */
 .app-container {
   flex: 1;
-  max-width: 900px !important;
+  width: 100%;
+  max-width: 1200px !important;
   margin: 0 auto !important;
   padding: 40px !important;
 }
