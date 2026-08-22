@@ -261,6 +261,16 @@ const translations = {
   }
 };
 
+// Get API token from URL query parameters (passed by Electron main process in production)
+// or fallback to the static token.json (for development hot-reloading)
+const getApiToken = () => {
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('token');
+  if (urlToken) return urlToken;
+  return tokenData.token;
+};
+const token = getApiToken();
+
 export default function App() {
   // Theme & Language States
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -294,7 +304,7 @@ export default function App() {
   // Load system info on startup
   useEffect(() => {
     fetch('/api/system-info', {
-      headers: { 'X-API-Token': tokenData.token }
+      headers: { 'X-API-Token': token }
     })
       .then(res => res.json())
       .then(data => setSystemInfo(data))
@@ -305,7 +315,7 @@ export default function App() {
   useEffect(() => {
     const fetchStatus = () => {
       fetch('/api/system-status', {
-        headers: { 'X-API-Token': tokenData.token }
+        headers: { 'X-API-Token': token }
       })
         .then(res => res.json())
         .then(data => setSystemStatus(data))
@@ -383,7 +393,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         const response = await fetch(`/api/file-info?path=${encodeURIComponent(encLocalPath)}`, {
-          headers: { 'X-API-Token': tokenData.token }
+          headers: { 'X-API-Token': token }
         });
         const data = await response.json();
         if (data && data.exists && data.hash) {
@@ -407,7 +417,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         const response = await fetch(`/api/file-info?path=${encodeURIComponent(decFilePath)}`, {
-          headers: { 'X-API-Token': tokenData.token }
+          headers: { 'X-API-Token': token }
         });
         const data = await response.json();
         if (data && data.exists && data.hash) {
@@ -473,7 +483,7 @@ export default function App() {
           'Content-Type': 'application/octet-stream',
           'X-File-Name': encodeURIComponent(encFile.name),
           'X-Settings': JSON.stringify(settingsPayload),
-          'X-API-Token': tokenData.token
+          'X-API-Token': token
         };
 
         response = await fetch('/api/encrypt', {
@@ -492,7 +502,7 @@ export default function App() {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'X-API-Token': tokenData.token
+            'X-API-Token': token
           },
           body: JSON.stringify({
             filePath: encLocalPath,
@@ -587,7 +597,7 @@ export default function App() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-API-Token': tokenData.token
+          'X-API-Token': token
         },
         body: JSON.stringify(payload)
       });
@@ -759,32 +769,32 @@ export default function App() {
                   </div>
                   <div className="monitor-row" style={{ marginBottom: '4px' }}>
                     <span className="monitor-key" style={{ fontSize: '0.68rem' }}>AES-GCM (256-bit)</span>
-                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.aesGcm ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                      {systemStatus.selfTests?.aesGcm ? 'ONLINE' : 'FAILED'}
+                    <span className="monitor-val" style={{ color: systemStatus.status === 'online' ? (systemStatus.selfTests?.aesGcm ? 'var(--color-green)' : 'var(--color-red)') : 'var(--text-dark)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.status === 'online' ? (systemStatus.selfTests?.aesGcm ? 'ONLINE' : 'FAILED') : 'OFFLINE'}
                     </span>
                   </div>
                   <div className="monitor-row" style={{ marginBottom: '4px' }}>
                     <span className="monitor-key" style={{ fontSize: '0.68rem' }}>Camellia (CTR)</span>
-                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.camelliaCtr ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                      {systemStatus.selfTests?.camelliaCtr ? 'ONLINE' : 'FAILED'}
+                    <span className="monitor-val" style={{ color: systemStatus.status === 'online' ? (systemStatus.selfTests?.camelliaCtr ? 'var(--color-green)' : 'var(--color-red)') : 'var(--text-dark)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.status === 'online' ? (systemStatus.selfTests?.camelliaCtr ? 'ONLINE' : 'FAILED') : 'OFFLINE'}
                     </span>
                   </div>
                   <div className="monitor-row" style={{ marginBottom: '4px' }}>
                     <span className="monitor-key" style={{ fontSize: '0.68rem' }}>ARIA (CTR)</span>
-                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.ariaCtr ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                      {systemStatus.selfTests?.ariaCtr ? 'ONLINE' : 'FAILED'}
+                    <span className="monitor-val" style={{ color: systemStatus.status === 'online' ? (systemStatus.selfTests?.ariaCtr ? 'var(--color-green)' : 'var(--color-red)') : 'var(--text-dark)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.status === 'online' ? (systemStatus.selfTests?.ariaCtr ? 'ONLINE' : 'FAILED') : 'OFFLINE'}
                     </span>
                   </div>
                   <div className="monitor-row" style={{ marginBottom: '4px' }}>
                     <span className="monitor-key" style={{ fontSize: '0.68rem' }}>ChaCha20</span>
-                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.chacha20 ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                      {systemStatus.selfTests?.chacha20 ? 'ONLINE' : 'FAILED'}
+                    <span className="monitor-val" style={{ color: systemStatus.status === 'online' ? (systemStatus.selfTests?.chacha20 ? 'var(--color-green)' : 'var(--color-red)') : 'var(--text-dark)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.status === 'online' ? (systemStatus.selfTests?.chacha20 ? 'ONLINE' : 'FAILED') : 'OFFLINE'}
                     </span>
                   </div>
                   <div className="monitor-row" style={{ marginBottom: '4px' }}>
                     <span className="monitor-key" style={{ fontSize: '0.68rem' }}>Scrypt KDF</span>
-                    <span className="monitor-val" style={{ color: systemStatus.selfTests?.scrypt ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
-                      {systemStatus.selfTests?.scrypt ? 'ONLINE' : 'FAILED'}
+                    <span className="monitor-val" style={{ color: systemStatus.status === 'online' ? (systemStatus.selfTests?.scrypt ? 'var(--color-green)' : 'var(--color-red)') : 'var(--text-dark)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      {systemStatus.status === 'online' ? (systemStatus.selfTests?.scrypt ? 'ONLINE' : 'FAILED') : 'OFFLINE'}
                     </span>
                   </div>
                 </div>
@@ -870,6 +880,7 @@ export default function App() {
       {/* Steganography View */}
       {screen === 'stego' && (
         <StegoConsole
+          token={token}
           t={t}
           lang={lang}
           onBack={resetForms}

@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { startServer, stopServer } from './server.js';
+import { startServer, stopServer, API_TOKEN } from './server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,7 +29,7 @@ async function createWindow() {
 
   // Load the web UI
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL(`http://localhost:5173?token=${API_TOKEN}`);
     // Open DevTools in development if needed
     // mainWindow.webContents.openDevTools();
   } else {
@@ -38,7 +38,7 @@ async function createWindow() {
     const keyPath = path.join(__dirname, 'certs', 'localhost-key.pem');
     const hasSSL = fs.existsSync(certPath) && fs.existsSync(keyPath);
     const protocol = hasSSL ? 'https' : 'http';
-    mainWindow.loadURL(`${protocol}://localhost:3001`);
+    mainWindow.loadURL(`${protocol}://localhost:3001?token=${API_TOKEN}`);
   }
 
   mainWindow.on('closed', () => {

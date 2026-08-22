@@ -12,9 +12,7 @@ import {
 } from 'lucide-react';
 import Dropzone from './Dropzone';
 import PathInput from './PathInput';
-import tokenData from '../token.json';
-
-export default function StegoConsole({ t, lang, onBack, onStartProcessing, onFinishProcessing, onProcessingStep }) {
+export default function StegoConsole({ token, t, lang, onBack, onStartProcessing, onFinishProcessing, onProcessingStep }) {
   const [activeTab, setActiveTab] = useState('hide'); // 'hide' or 'reveal'
   
   // Hide form state
@@ -78,7 +76,7 @@ export default function StegoConsole({ t, lang, onBack, onStartProcessing, onFin
           'Content-Type': 'application/octet-stream',
           'X-File-Name': encodeURIComponent(hideFile.name),
           'X-Settings': JSON.stringify(settingsPayload),
-          'X-API-Token': tokenData.token
+          'X-API-Token': token
         };
 
         response = await fetch('/api/encrypt', {
@@ -96,7 +94,7 @@ export default function StegoConsole({ t, lang, onBack, onStartProcessing, onFin
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Token': tokenData.token
+            'X-API-Token': token
           },
           body: JSON.stringify({
             filePath: hideLocalPath,
@@ -148,7 +146,7 @@ export default function StegoConsole({ t, lang, onBack, onStartProcessing, onFin
           headers: {
             'Content-Type': 'application/octet-stream',
             'X-Settings': JSON.stringify(payload),
-            'X-API-Token': tokenData.token
+            'X-API-Token': token
           },
           body: revealFile
         });
@@ -162,7 +160,7 @@ export default function StegoConsole({ t, lang, onBack, onStartProcessing, onFin
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Token': tokenData.token
+            'X-API-Token': token
           },
           body: JSON.stringify({
             filePath: revealLocalPath,

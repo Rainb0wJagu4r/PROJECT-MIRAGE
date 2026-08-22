@@ -15,13 +15,13 @@ const app = express();
 const PORT = 3001;
 
 // Generate runtime API token and write it to local JSON file
-const API_TOKEN = crypto.randomBytes(32).toString('hex');
+export const API_TOKEN = crypto.randomBytes(32).toString('hex');
 try {
   const tokenPath = path.join(__dirname, 'src', 'token.json');
   fs.writeFileSync(tokenPath, JSON.stringify({ token: API_TOKEN }, null, 2));
   console.log(`[Security] API Token generated and written to ${tokenPath}`);
 } catch (err) {
-  console.error('[Security] Failed to write API Token to disk:', err);
+  console.warn('[Security] Failed to write API Token to disk (Read-only filesystem under ASAR package/Darwin bundle), fallback to memory-passing.');
 }
 
 // Middlewares
