@@ -203,9 +203,9 @@ try {
   const password = 'DecentralizedHackerCascadePassword!';
   const salt = crypto.randomBytes(16);
   
-  // 1. Extended KDF test (1024-bit key)
+  // 1. Extended KDF test (128 bytes key)
   const key1024 = deriveKey(password, salt, false, '', 128);
-  assert(key1024.length === 128, 'KDF extended derivation produces 1024-bit (128 bytes) key');
+  assert(key1024.length === 128, 'KDF extended derivation produces 128-byte key material');
 
   // 2. Mirage-C4 encryption and decryption test
   const ivs = {
@@ -215,11 +215,12 @@ try {
     ivAes: crypto.randomBytes(12)
   };
   const payloadBuf = Buffer.from('Quantum-resistant cascading encryption test payload.', 'utf8');
+  const header = Buffer.from('MIRAGE\x01\x03', 'binary');
   
-  const { ciphertext, tag } = encryptMirageC4(payloadBuf, key1024, ivs);
+  const { ciphertext, tag } = encryptMirageC4(payloadBuf, key1024, ivs, header);
   assert(ciphertext.length === payloadBuf.length, 'Mirage-C4 encrypt preserves payload length (CTR/stream cascade)');
   
-  const decrypted = decryptMirageC4(ciphertext, key1024, ivs, tag);
+  const decrypted = decryptMirageC4(ciphertext, key1024, ivs, tag, header);
   assert(decrypted.toString('utf8') === payloadBuf.toString('utf8'), 'Mirage-C4 decrypt successfully restores original payload');
 
   // 3. Steganography hiding and recovery test

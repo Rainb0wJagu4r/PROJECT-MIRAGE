@@ -239,12 +239,12 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
               <div className="result-row">
                 <span className="result-key">Algoritmo Core:</span>
                 <span className="result-val" style={{ color: 'var(--color-cyan)' }}>
-                  {result.algorithm === 'mirage-c4' ? 'Mirage-C4 (1024-bit Cascade)' : 'AES-256-GCM'}
+                  {result.algorithm === 'mirage-c4' ? 'Mirage-C4 (4x256-bit Cascade)' : 'AES-256-GCM'}
                 </span>
               </div>
               <div className="result-row">
-                <span className="result-key">Esteganografía:</span>
-                <span className="result-val" style={{ color: 'var(--color-green)' }}>✓ Activo (Inyección EOF)</span>
+                <span className="result-key">{lang === 'es' ? 'Anexo de Portador:' : 'Carrier Appending:'}</span>
+                <span className="result-val" style={{ color: 'var(--color-green)' }}>{lang === 'es' ? '✓ Activo (Encapsulado EOF)' : '✓ Active (EOF Encapsulated)'}</span>
               </div>
             </>
           ) : (
@@ -276,7 +276,7 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
               <div className="result-row">
                 <span className="result-key">Algoritmo Core:</span>
                 <span className="result-val" style={{ color: 'var(--color-cyan)' }}>
-                  {result.algorithm === 'mirage-c4' ? 'Mirage-C4 (1024-bit Cascade)' : 'AES-256-GCM'}
+                  {result.algorithm === 'mirage-c4' ? 'Mirage-C4 (4x256-bit Cascade)' : 'AES-256-GCM'}
                 </span>
               </div>
               <div className="result-row">
@@ -390,7 +390,7 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
                 onChange={(e) => setHideAlgorithm(e.target.value)}
               >
                 <option value="aes-256-gcm">AES-256-GCM (Standard)</option>
-                <option value="mirage-c4">Mirage-C4 (1024-bit Cascade)</option>
+                <option value="mirage-c4">Mirage-C4 (4x256-bit Cascade)</option>
               </select>
               <div style={{
                 marginTop: '8px',

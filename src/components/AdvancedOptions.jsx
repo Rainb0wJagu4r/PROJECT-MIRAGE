@@ -33,12 +33,12 @@ const optTrans = {
     decoyPathPlaceholder: "Ruta del archivo señuelo en disco...",
     splitTitle: "Fragmentación de Datos (2-of-3 Split)",
     splitDesc: "Divide el archivo cifrado en 3 fragmentos matemáticos. Requiere cualquier combinación de 2 de ellos para descifrar.",
-    shredTitle: "Destrucción Segura del Original (Shredder)",
-    shredDesc: "Sobrescribe el archivo original en disco en múltiples pasadas de datos aleatorios antes de borrarlo definitivamente.",
+    shredTitle: "Destrucción del Original (Shredder)",
+    shredDesc: "Sobrescribe el archivo original en disco en múltiples pasadas de datos aleatorios antes de borrarlo.",
     shredPassesLabel: "Pasadas de Sobrescritura",
     shredOption1: "1 pasada (Rápido)",
     shredOption3: "3 pasadas (Estándar Seguro)",
-    shredOption7: "7 pasadas (Estándar Militar DoD 5220.22-M)",
+    shredOption7: "7 pasadas (Sobrescritura Profunda / Alta Seguridad)",
   },
   en: {
     header: "ADDITIONAL ARMOR & SECURITY",
@@ -65,7 +65,7 @@ const optTrans = {
     shredPassesLabel: "Overwrite Passes",
     shredOption1: "1 pass (Fast)",
     shredOption3: "3 passes (Secure Standard)",
-    shredOption7: "7 passes (DoD 5220.22-M Military Standard)",
+    shredOption7: "7 passes (Deep Overwrite / High Security)",
   }
 };
 

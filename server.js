@@ -43,7 +43,6 @@ const authenticateToken = (req, res, next) => {
 };
 app.use('/api', authenticateToken);
 
-// Helper to get platform UUID on macOS (with cross-platform fallback)
 function getHardwareUUID() {
   try {
     if (process.platform === 'darwin') {
@@ -53,9 +52,15 @@ function getHardwareUUID() {
         return match[1].trim();
       }
     } else if (process.platform === 'win32') {
-      const output = execSync('wmic csproduct get uuid').toString();
-      const lines = output.split('\n');
-      if (lines.length > 1) return lines[1].trim();
+      try {
+        const output = execSync('powershell -Command "Get-CimInstance -ClassName Win32_ComputerSystemProduct | Select-Object -ExpandProperty UUID"', { stdio: ['pipe', 'pipe', 'ignore'] }).toString();
+        if (output.trim()) return output.trim();
+      } catch (errWin) {
+        // Fallback to Registry MachineGuid query
+        const output = execSync('reg query "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', { stdio: ['pipe', 'pipe', 'ignore'] }).toString();
+        const match = output.match(/MachineGuid\s+REG_SZ\s+(\S+)/);
+        if (match && match[1]) return match[1].trim();
+      }
     } else if (process.platform === 'linux') {
       if (fs.existsSync('/var/lib/dbus/machine-id')) {
         return fs.readFileSync('/var/lib/dbus/machine-id', 'utf8').trim();
@@ -184,12 +189,12 @@ function scrubPng(buffer) {
   return Buffer.concat(chunks);
 }
 
-// Scrypt Key Derivation Wrapper (Symmetric Double Factor + Hardware Pepper Lock)
+// Scrypt Key Derivation Wrapper (Symmetric Double-Layer Secret + Hardware Pepper Lock)
 function deriveKey(password, salt, hardwareLockEnabled, doubleFactorPassword = '', keySize = 32) {
   let combinedPassword = password;
   
   if (doubleFactorPassword) {
-    combinedPassword += '__2FA__' + doubleFactorPassword;
+    combinedPassword += '__SECSEC__' + doubleFactorPassword;
   }
   
   if (hardwareLockEnabled) {
@@ -201,9 +206,9 @@ function deriveKey(password, salt, hardwareLockEnabled, doubleFactorPassword = '
   return crypto.scryptSync(combinedPassword, salt, keySize, { N: 16384, r: 8, p: 1 });
 }
 
-// Custom 1024-bit Cascaded Symmetric Cipher (Mirage-C4)
+// Custom 4-Layer Cascaded Symmetric Cipher (Mirage-C4)
 // Structure: Camellia-256-CTR -> ARIA-256-CTR -> ChaCha20 -> AES-256-GCM
-function encryptMirageC4(payloadBuf, key128Bytes, ivs) {
+function encryptMirageC4(payloadBuf, key128Bytes, ivs, header) {
   const keyCamellia = key128Bytes.subarray(0, 32);
   const keyAria = key128Bytes.subarray(32, 64);
   const keyChaCha = key128Bytes.subarray(64, 96);
@@ -228,13 +233,16 @@ function encryptMirageC4(payloadBuf, key128Bytes, ivs) {
 
   // Layer 4: AES-256-GCM (AEAD final authenticated layer)
   const cipher4 = crypto.createCipheriv('aes-256-gcm', keyAes, ivAes);
+  if (header) {
+    cipher4.setAAD(header);
+  }
   const ciphertext = Buffer.concat([cipher4.update(state), cipher4.final()]);
   const tag = cipher4.getAuthTag();
 
   return { ciphertext, tag };
 }
 
-function decryptMirageC4(ciphertext, key128Bytes, ivs, tag) {
+function decryptMirageC4(ciphertext, key128Bytes, ivs, tag, header) {
   const keyCamellia = key128Bytes.subarray(0, 32);
   const keyAria = key128Bytes.subarray(32, 64);
   const keyChaCha = key128Bytes.subarray(64, 96);
@@ -248,6 +256,9 @@ function decryptMirageC4(ciphertext, key128Bytes, ivs, tag) {
   // Layer 4: AES-256-GCM decipher (authentication check first)
   const decipher4 = crypto.createDecipheriv('aes-256-gcm', keyAes, ivAes);
   decipher4.setAuthTag(tag);
+  if (header) {
+    decipher4.setAAD(header);
+  }
   let state = Buffer.concat([decipher4.update(ciphertext), decipher4.final()]);
 
   // Layer 3: ChaCha20 decipher
@@ -263,7 +274,7 @@ function decryptMirageC4(ciphertext, key128Bytes, ivs, tag) {
   return Buffer.concat([decipher1.update(state), decipher1.final()]);
 }
 
-// Steganography injection helper
+// Trailing Payload Encapsulation (Carrier Appending) helper
 // Appends encrypted payload to the end of carrier file bytes, with a trailing 4-byte length and 8-byte magic tag
 function applySteganography(carrierPath, encryptedPayload, addStep) {
   let carrierBuffer;
@@ -275,7 +286,7 @@ function applySteganography(carrierPath, encryptedPayload, addStep) {
     }
     if (fs.existsSync(resolvedCarrierPath)) {
       carrierBuffer = fs.readFileSync(resolvedCarrierPath);
-      addStep(`Steganography: Loaded carrier image from ${resolvedCarrierPath} (${carrierBuffer.length} bytes)`);
+      addStep(`Carrier Appending: Loaded carrier image from ${resolvedCarrierPath} (${carrierBuffer.length} bytes)`);
     }
   }
 
@@ -285,7 +296,7 @@ function applySteganography(carrierPath, encryptedPayload, addStep) {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
       'base64'
     );
-    addStep('Steganography: Using default transparent PNG carrier');
+    addStep('Carrier Appending: Using default transparent PNG carrier');
   }
 
   const payloadLen = encryptedPayload.length;
@@ -627,7 +638,7 @@ app.post('/api/encrypt', async (req, res) => {
     }
 
     // Helper function to encrypt a payload buffer
-    const encryptPayload = (payloadBuf, keyPass, dfPass) => {
+    const encryptPayload = (payloadBuf, keyPass, dfPass, header) => {
       const salt = crypto.randomBytes(16);
       if (algorithm === 'mirage-c4') {
         const ivCamellia = crypto.randomBytes(16);
@@ -636,12 +647,15 @@ app.post('/api/encrypt', async (req, res) => {
         const ivAes = crypto.randomBytes(12);
         const ivs = { ivCamellia, ivAria, ivChaCha, ivAes };
         const key128Bytes = deriveKey(keyPass, salt, hardwareLockEnabled, dfPass, 128);
-        const { ciphertext, tag } = encryptMirageC4(payloadBuf, key128Bytes, ivs);
+        const { ciphertext, tag } = encryptMirageC4(payloadBuf, key128Bytes, ivs, header);
         return { salt, ivs, tag, ciphertext };
       } else {
         const iv = crypto.randomBytes(12);
         const key = deriveKey(keyPass, salt, hardwareLockEnabled, dfPass, 32);
         const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        if (header) {
+          cipher.setAAD(header);
+        }
         
         const ciphertext = Buffer.concat([cipher.update(payloadBuf), cipher.final()]);
         const tag = cipher.getAuthTag();
@@ -687,9 +701,9 @@ app.post('/api/encrypt', async (req, res) => {
       const decoyPayload = serializePayload(decoyFilename, decoyBuffer, 0); // No TTL on decoy usually
       
       if (algorithm === 'mirage-c4') {
-        const block1 = encryptPayload(payload, password, doubleFactorPassword);
-        const block2 = encryptPayload(decoyPayload, duressPassword, '');
         const header = Buffer.from('MIRAGE\x01\x04', 'binary');
+        const block1 = encryptPayload(payload, password, doubleFactorPassword, header);
+        const block2 = encryptPayload(decoyPayload, duressPassword, '', header);
         
         const block1LenBuf = Buffer.alloc(8);
         block1LenBuf.writeDoubleBE(block1.ciphertext.length, 0);
@@ -701,11 +715,11 @@ app.post('/api/encrypt', async (req, res) => {
           block1.salt, block1.ivs.ivCamellia, block1.ivs.ivAria, block1.ivs.ivChaCha, block1.ivs.ivAes, block1.tag, block1LenBuf, block1.ciphertext,
           block2.salt, block2.ivs.ivCamellia, block2.ivs.ivAria, block2.ivs.ivChaCha, block2.ivs.ivAes, block2.tag, block2LenBuf, block2.ciphertext
         ]);
-        addStep('Mirage-C4 (1024-bit Cascade) Dual-Block Envelope constructed');
+        addStep('Mirage-C4 (4x256-bit Cascade) Dual-Block Envelope constructed');
       } else {
-        const block1 = encryptPayload(payload, password, doubleFactorPassword);
-        const block2 = encryptPayload(decoyPayload, duressPassword, '');
         const header = Buffer.from('MIRAGE\x01\x02', 'binary');
+        const block1 = encryptPayload(payload, password, doubleFactorPassword, header);
+        const block2 = encryptPayload(decoyPayload, duressPassword, '', header);
         
         const block1LenBuf = Buffer.alloc(8);
         block1LenBuf.writeDoubleBE(block1.ciphertext.length, 0);
@@ -722,8 +736,8 @@ app.post('/api/encrypt', async (req, res) => {
     } else {
       if (algorithm === 'mirage-c4') {
         // Mirage-C4 Single Block (Mode 0x03)
-        const block = encryptPayload(payload, password, doubleFactorPassword);
         const header = Buffer.from('MIRAGE\x01\x03', 'binary');
+        const block = encryptPayload(payload, password, doubleFactorPassword, header);
         
         const cipherLenBuf = Buffer.alloc(8);
         cipherLenBuf.writeDoubleBE(block.ciphertext.length, 0);
@@ -739,11 +753,11 @@ app.post('/api/encrypt', async (req, res) => {
           cipherLenBuf,
           block.ciphertext
         ]);
-        addStep('Mirage-C4 (1024-bit Cascade) Single-Block Envelope constructed');
+        addStep('Mirage-C4 (4x256-bit Cascade) Single-Block Envelope constructed');
       } else {
         // Standard Single Block (Mode 0x01)
-        const block = encryptPayload(payload, password, doubleFactorPassword);
         const header = Buffer.from('MIRAGE\x01\x01', 'binary');
+        const block = encryptPayload(payload, password, doubleFactorPassword, header);
         
         const cipherLenBuf = Buffer.alloc(8);
         cipherLenBuf.writeDoubleBE(block.ciphertext.length, 0);
@@ -980,14 +994,14 @@ app.post('/api/decrypt', async (req, res) => {
       addStep(`Loaded file: ${resolvedPath} (${encryptedBuffer.length} bytes)`);
     }
 
-    // Step 1b: Steganography check and extraction
+    // Step 1b: Carrier Appending check and extraction
     let isSteg = false;
     if (encryptedBuffer.length >= 12) {
       const signature = encryptedBuffer.subarray(-8).toString('ascii');
       if (signature === 'MIRGSTEG') {
         isSteg = true;
         const payloadLen = encryptedBuffer.readUInt32BE(encryptedBuffer.length - 12);
-        addStep(`Steganography signature verified: extracting trailing payload (${payloadLen} bytes)`);
+        addStep(`Carrier Appending signature verified: extracting trailing payload (${payloadLen} bytes)`);
         encryptedBuffer = encryptedBuffer.subarray(
           encryptedBuffer.length - 12 - payloadLen,
           encryptedBuffer.length - 12
@@ -1010,23 +1024,27 @@ app.post('/api/decrypt', async (req, res) => {
 
     let payloadBuffer = null;
     let hardwareLockEnabled = false;
+    const header = encryptedBuffer.subarray(0, 8);
 
     // Helper decrypt block function
-    const decryptBlock = (salt, iv, tag, ciphertext, isHwLock) => {
+    const decryptBlock = (salt, iv, tag, ciphertext, isHwLock, headerBuf) => {
       try {
         const key = deriveKey(password, salt, isHwLock, doubleFactorPassword, 32);
         const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
         decipher.setAuthTag(tag);
+        if (headerBuf) {
+          decipher.setAAD(headerBuf);
+        }
         return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
       } catch (e) {
         return null;
       }
     };
 
-    const decryptBlockC4 = (salt, ivs, tag, ciphertext, isHwLock) => {
+    const decryptBlockC4 = (salt, ivs, tag, ciphertext, isHwLock, headerBuf) => {
       try {
         const key128Bytes = deriveKey(password, salt, isHwLock, doubleFactorPassword, 128);
-        return decryptMirageC4(ciphertext, key128Bytes, ivs, tag);
+        return decryptMirageC4(ciphertext, key128Bytes, ivs, tag, headerBuf);
       } catch (e) {
         return null;
       }
@@ -1041,12 +1059,12 @@ app.post('/api/decrypt', async (req, res) => {
       const ciphertext = encryptedBuffer.subarray(60, 60 + cipherLen);
 
       // Try decrypting with hardware lock (both states to see which works)
-      payloadBuffer = decryptBlock(salt, iv, tag, ciphertext, true);
+      payloadBuffer = decryptBlock(salt, iv, tag, ciphertext, true, header);
       if (payloadBuffer) {
         hardwareLockEnabled = true;
         addStep('AES-256-GCM authentication successful (Hardware lock verified)');
       } else {
-        payloadBuffer = decryptBlock(salt, iv, tag, ciphertext, false);
+        payloadBuffer = decryptBlock(salt, iv, tag, ciphertext, false, header);
         if (payloadBuffer) {
           addStep('AES-256-GCM authentication successful');
         }
@@ -1071,12 +1089,12 @@ app.post('/api/decrypt', async (req, res) => {
 
       // Try Decrypting Block 1 (Real block)
       addStep('Testing decryption key against Primary Block...');
-      payloadBuffer = decryptBlock(b1Salt, b1Iv, b1Tag, b1Ciphertext, true);
+      payloadBuffer = decryptBlock(b1Salt, b1Iv, b1Tag, b1Ciphertext, true, header);
       if (payloadBuffer) {
         hardwareLockEnabled = true;
         addStep('Authenticated Primary Block successfully (Hardware Lock verified)');
       } else {
-        payloadBuffer = decryptBlock(b1Salt, b1Iv, b1Tag, b1Ciphertext, false);
+        payloadBuffer = decryptBlock(b1Salt, b1Iv, b1Tag, b1Ciphertext, false, header);
         if (payloadBuffer) {
           addStep('Authenticated Primary Block successfully');
         }
@@ -1085,7 +1103,7 @@ app.post('/api/decrypt', async (req, res) => {
       // If Block 1 failed, test Block 2 (Decoy block, standard encryption)
       if (!payloadBuffer) {
         addStep('Primary Block auth failed. Testing key against Decoy Block (Duress Trigger)...');
-        payloadBuffer = decryptBlock(b2Salt, b2Iv, b2Tag, b2Ciphertext, false);
+        payloadBuffer = decryptBlock(b2Salt, b2Iv, b2Tag, b2Ciphertext, false, header);
         if (payloadBuffer) {
           addStep('⚠️ DURESS TRIGGERED: Decoy block successfully authenticated');
         }
@@ -1105,12 +1123,12 @@ app.post('/api/decrypt', async (req, res) => {
       const ivs = { ivCamellia, ivAria, ivChaCha, ivAes };
 
       // Try decrypting with hardware lock
-      payloadBuffer = decryptBlockC4(salt, ivs, tag, ciphertext, true);
+      payloadBuffer = decryptBlockC4(salt, ivs, tag, ciphertext, true, header);
       if (payloadBuffer) {
         hardwareLockEnabled = true;
         addStep('Mirage-C4 authentication successful (Hardware lock verified)');
       } else {
-        payloadBuffer = decryptBlockC4(salt, ivs, tag, ciphertext, false);
+        payloadBuffer = decryptBlockC4(salt, ivs, tag, ciphertext, false, header);
         if (payloadBuffer) {
           addStep('Mirage-C4 authentication successful');
         }
@@ -1142,12 +1160,12 @@ app.post('/api/decrypt', async (req, res) => {
 
       // Decrypt Block 1 (Primary payload)
       addStep('Testing decryption key against Primary Block...');
-      payloadBuffer = decryptBlockC4(block1.salt, block1.ivs, block1.tag, block1.ciphertext, true);
+      payloadBuffer = decryptBlockC4(block1.salt, block1.ivs, block1.tag, block1.ciphertext, true, header);
       if (payloadBuffer) {
         hardwareLockEnabled = true;
         addStep('Authenticated Primary Block successfully (Hardware Lock verified)');
       } else {
-        payloadBuffer = decryptBlockC4(block1.salt, block1.ivs, block1.tag, block1.ciphertext, false);
+        payloadBuffer = decryptBlockC4(block1.salt, block1.ivs, block1.tag, block1.ciphertext, false, header);
         if (payloadBuffer) {
           addStep('Authenticated Primary Block successfully');
         }
@@ -1156,7 +1174,7 @@ app.post('/api/decrypt', async (req, res) => {
       // If Block 1 failed, test Block 2 (Decoy payload)
       if (!payloadBuffer) {
         addStep('Primary Block auth failed. Testing key against Decoy Block (Duress Trigger)...');
-        payloadBuffer = decryptBlockC4(block2.salt, block2.ivs, block2.tag, block2.ciphertext, false);
+        payloadBuffer = decryptBlockC4(block2.salt, block2.ivs, block2.tag, block2.ciphertext, false, header);
         if (payloadBuffer) {
           addStep('⚠️ DURESS TRIGGERED: Decoy block successfully authenticated');
         }
