@@ -1,5 +1,23 @@
 import { exec, execSync } from 'child_process';
 import dns from 'dns';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Ensure src/token.json exists so Vite can compile on fresh clones
+const tokenPath = path.join(__dirname, '..', 'src', 'token.json');
+if (!fs.existsSync(tokenPath)) {
+  try {
+    fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+    fs.writeFileSync(tokenPath, JSON.stringify({ token: 'dev-placeholder-token' }, null, 2));
+    console.log('🔑 Created token.json placeholder for dev compilation.');
+  } catch (e) {
+    console.error('Failed to create token.json placeholder:', e.message);
+  }
+}
 
 console.log('🔍 Checking Project Mirage dependencies...');
 

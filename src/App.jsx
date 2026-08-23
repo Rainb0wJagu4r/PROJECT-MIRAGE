@@ -306,8 +306,15 @@ export default function App() {
     fetch('/api/system-info', {
       headers: { 'X-API-Token': token }
     })
-      .then(res => res.json())
-      .then(data => setSystemInfo(data))
+      .then(res => {
+        if (!res.ok) throw new Error('System info fetch failed');
+        return res.json();
+      })
+      .then(data => {
+        if (data && data.uuid) {
+          setSystemInfo(data);
+        }
+      })
       .catch(err => console.error('Failed to load system info:', err));
   }, []);
 
@@ -317,8 +324,15 @@ export default function App() {
       fetch('/api/system-status', {
         headers: { 'X-API-Token': token }
       })
-        .then(res => res.json())
-        .then(data => setSystemStatus(data))
+        .then(res => {
+          if (!res.ok) throw new Error('System status fetch failed');
+          return res.json();
+        })
+        .then(data => {
+          if (data && data.status) {
+            setSystemStatus(data);
+          }
+        })
         .catch(err => {
           console.error('Failed to load status:', err);
           setSystemStatus(prev => ({ ...prev, status: 'offline' }));
@@ -752,7 +766,7 @@ export default function App() {
                 <div className="monitor-row">
                   <span className="monitor-key">{t.navMemoryLoad}</span>
                   <span className="monitor-val" style={{ color: 'var(--color-cyan)' }}>
-                    {systemStatus.memory.rss ? `${systemStatus.memory.rss} MB` : 'OFFLINE'}
+                    {systemStatus.memory?.rss ? `${systemStatus.memory.rss} MB` : 'OFFLINE'}
                   </span>
                 </div>
                 <div className="monitor-row">
@@ -835,9 +849,9 @@ export default function App() {
             <p className="brand-subtitle">
               {t.brandSubtitle}
             </p>
-            {systemInfo && (
+            {systemInfo && systemInfo.uuid && (
               <div style={{ marginTop: '10px', fontSize: '0.75rem', color: 'var(--text-dark)', fontFamily: 'var(--font-mono)' }}>
-                HOST: {systemInfo.hostname} ({systemInfo.platform}) | HW UUID: {systemInfo.uuid.substring(0, 18)}...
+                HOST: {systemInfo.hostname} ({systemInfo.platform}) | HW UUID: {String(systemInfo.uuid).substring(0, 18)}...
               </div>
             )}
           </header>
