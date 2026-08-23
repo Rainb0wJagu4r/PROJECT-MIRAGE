@@ -63,16 +63,11 @@ dns.lookup('registry.npmjs.org', (err) => {
       }
     });
 
-    // 3. Perform automatic safe minor/patch updates
+    // 3. Report safe minor/patch updates for developer consideration
     if (safeUpdates.length > 0) {
       console.log(`\n✨ Safe minor/patch updates detected for ${safeUpdates.length} libraries.`);
-      console.log('📦 Running auto-updater (npm update) to update them safely...');
-      try {
-        execSync('npm update', { stdio: 'inherit' });
-        console.log('✅ Safe updates applied successfully!\n');
-      } catch (updateError) {
-        console.error('⚠️ Auto-update execution failed:', updateError.message);
-      }
+      console.log('👉 To install safe updates manually, run:');
+      console.log('   npm update\n');
     }
 
     // 4. Report major updates that require manual action (since they are breaking)

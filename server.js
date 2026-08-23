@@ -36,7 +36,15 @@ app.use(express.raw({ type: 'application/octet-stream', limit: '200mb' }));
 // Token authorization middleware
 const authenticateToken = (req, res, next) => {
   const clientToken = req.headers['x-api-token'];
-  if (!clientToken || clientToken !== API_TOKEN) {
+  if (!clientToken) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing API Token.' });
+  }
+  
+  // Constant-time timingSafeEqual comparison by hashing to avoid length leakage/throws
+  const clientHash = crypto.createHash('sha256').update(clientToken).digest();
+  const serverHash = crypto.createHash('sha256').update(API_TOKEN).digest();
+  
+  if (!crypto.timingSafeEqual(clientHash, serverHash)) {
     return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing API Token.' });
   }
   next();
@@ -73,9 +81,21 @@ function getHardwareUUID() {
     console.error('Failed to retrieve native hardware UUID, using fallback:', err.message);
   }
   
-  // Resilient fallback based on host machine details
-  const fallbackStr = os.hostname() + '-' + os.arch() + '-' + os.platform() + '-' + os.userInfo().username;
-  return crypto.createHash('sha256').update(fallbackStr).digest('hex');
+  // Resilient fallback based on a persistent local installation seed
+  const fallbackPath = path.join(os.homedir(), '.project-mirage-machine-id');
+  try {
+    if (fs.existsSync(fallbackPath)) {
+      return fs.readFileSync(fallbackPath, 'utf8').trim();
+    } else {
+      const generated = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(fallbackPath, generated, 'utf8');
+      return generated;
+    }
+  } catch (fallbackErr) {
+    // If the home dir is completely read-only, use a best-effort semi-predictable fallback hash
+    const fallbackStr = os.hostname() + '-' + os.arch() + '-' + os.platform() + '-' + os.userInfo().username;
+    return crypto.createHash('sha256').update(fallbackStr).digest('hex');
+  }
 }
 
 // 3-Pass Secure Shredder
@@ -202,13 +222,18 @@ function deriveKey(password, salt, hardwareLockEnabled, doubleFactorPassword = '
     combinedPassword += '__HW__' + hwUuid;
   }
   
-  // Scrypt key derivation (keySize bytes)
-  return crypto.scryptSync(combinedPassword, salt, keySize, { N: 16384, r: 8, p: 1 });
+  // Hardened scrypt key derivation for robust offline protection (128MB RAM footprint)
+  return crypto.scryptSync(combinedPassword, salt, keySize, {
+    N: 131072,
+    r: 8,
+    p: 1,
+    maxmem: 256 * 1024 * 1024
+  });
 }
 
 // Custom 4-Layer Cascaded Symmetric Cipher (Mirage-C4)
 // Structure: Camellia-256-CTR -> ARIA-256-CTR -> ChaCha20 -> AES-256-GCM
-function encryptMirageC4(payloadBuf, key128Bytes, ivs, header) {
+function encryptMirageC4(payloadBuf, key128Bytes, ivs, header, salt) {
   const keyCamellia = key128Bytes.subarray(0, 32);
   const keyAria = key128Bytes.subarray(32, 64);
   const keyChaCha = key128Bytes.subarray(64, 96);
@@ -233,16 +258,25 @@ function encryptMirageC4(payloadBuf, key128Bytes, ivs, header) {
 
   // Layer 4: AES-256-GCM (AEAD final authenticated layer)
   const cipher4 = crypto.createCipheriv('aes-256-gcm', keyAes, ivAes);
-  if (header) {
-    cipher4.setAAD(header);
-  }
+  
+  // Consolidate AAD to authenticate all metadata: header || salt || ivs
+  const aad = Buffer.concat([
+    header || Buffer.alloc(0),
+    salt || Buffer.alloc(0),
+    ivCamellia,
+    ivAria,
+    ivChaCha,
+    ivAes
+  ]);
+  cipher4.setAAD(aad);
+
   const ciphertext = Buffer.concat([cipher4.update(state), cipher4.final()]);
   const tag = cipher4.getAuthTag();
 
   return { ciphertext, tag };
 }
 
-function decryptMirageC4(ciphertext, key128Bytes, ivs, tag, header) {
+function decryptMirageC4(ciphertext, key128Bytes, ivs, tag, header, salt) {
   const keyCamellia = key128Bytes.subarray(0, 32);
   const keyAria = key128Bytes.subarray(32, 64);
   const keyChaCha = key128Bytes.subarray(64, 96);
@@ -256,9 +290,18 @@ function decryptMirageC4(ciphertext, key128Bytes, ivs, tag, header) {
   // Layer 4: AES-256-GCM decipher (authentication check first)
   const decipher4 = crypto.createDecipheriv('aes-256-gcm', keyAes, ivAes);
   decipher4.setAuthTag(tag);
-  if (header) {
-    decipher4.setAAD(header);
-  }
+  
+  // Consolidate AAD to verify all metadata: header || salt || ivs
+  const aad = Buffer.concat([
+    header || Buffer.alloc(0),
+    salt || Buffer.alloc(0),
+    ivCamellia,
+    ivAria,
+    ivChaCha,
+    ivAes
+  ]);
+  decipher4.setAAD(aad);
+
   let state = Buffer.concat([decipher4.update(ciphertext), decipher4.final()]);
 
   // Layer 3: ChaCha20 decipher
@@ -602,6 +645,18 @@ app.post('/api/encrypt', async (req, res) => {
       throw new Error('Key Generation Error: Password is required');
     }
 
+    if (password.length < 10) {
+      throw new Error('Password Policy Error: Master password must be at least 10 characters long');
+    }
+
+    if (doubleFactorPassword && doubleFactorPassword.length < 10) {
+      throw new Error('Password Policy Error: Secondary Secret must be at least 10 characters long');
+    }
+
+    if (duressEnabled && duressPassword && duressPassword.length < 10) {
+      throw new Error('Password Policy Error: Duress Password must be at least 10 characters long');
+    }
+
     // Step 1: Metadata Scrubbing
     if (metadataScrubEnabled) {
       const ext = path.extname(filename).toLowerCase();
@@ -647,7 +702,7 @@ app.post('/api/encrypt', async (req, res) => {
         const ivAes = crypto.randomBytes(12);
         const ivs = { ivCamellia, ivAria, ivChaCha, ivAes };
         const key128Bytes = deriveKey(keyPass, salt, hardwareLockEnabled, dfPass, 128);
-        const { ciphertext, tag } = encryptMirageC4(payloadBuf, key128Bytes, ivs, header);
+        const { ciphertext, tag } = encryptMirageC4(payloadBuf, key128Bytes, ivs, header, salt);
         return { salt, ivs, tag, ciphertext };
       } else {
         const iv = crypto.randomBytes(12);
@@ -1044,7 +1099,7 @@ app.post('/api/decrypt', async (req, res) => {
     const decryptBlockC4 = (salt, ivs, tag, ciphertext, isHwLock, headerBuf) => {
       try {
         const key128Bytes = deriveKey(password, salt, isHwLock, doubleFactorPassword, 128);
-        return decryptMirageC4(ciphertext, key128Bytes, ivs, tag, headerBuf);
+        return decryptMirageC4(ciphertext, key128Bytes, ivs, tag, headerBuf, salt);
       } catch (e) {
         return null;
       }

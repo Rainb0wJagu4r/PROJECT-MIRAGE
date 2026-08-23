@@ -193,6 +193,11 @@ export default function AdvancedOptions({ settings, setSetting, lang = 'es' }) {
                   placeholder={t.duressPassPlaceholder}
                 />
               </div>
+              {settings.duressPassword && settings.duressPassword.length < 10 && (
+                <div style={{ color: 'var(--color-red)', fontSize: '0.72rem', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+                  ⚠️ {lang === 'es' ? 'La contraseña del señuelo debe tener al menos 10 caracteres.' : 'Decoy password must be at least 10 characters.'}
+                </div>
+              )}
             </div>
 
             <PathInput

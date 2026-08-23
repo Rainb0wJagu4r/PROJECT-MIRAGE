@@ -429,6 +429,11 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
                   {showHidePassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {hidePassword && hidePassword.length < 10 && (
+                <div style={{ color: 'var(--color-red)', fontSize: '0.72rem', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+                  ⚠️ {lang === 'es' ? 'La contraseña debe tener al menos 10 caracteres.' : 'Password must be at least 10 characters.'}
+                </div>
+              )}
             </div>
 
             <PathInput
@@ -443,7 +448,7 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
               <button 
                 type="submit" 
                 className="action-btn"
-                disabled={!hidePassword || (!hideFile && !hideLocalPath)}
+                disabled={!hidePassword || hidePassword.length < 10 || (!hideFile && !hideLocalPath)}
                 style={{ backgroundColor: 'var(--color-cyan)', boxShadow: '0 0 15px var(--color-cyan-glow)' }}
               >
                 <Lock size={20} />

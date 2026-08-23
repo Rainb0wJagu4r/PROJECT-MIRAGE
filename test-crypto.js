@@ -217,11 +217,23 @@ try {
   const payloadBuf = Buffer.from('Quantum-resistant cascading encryption test payload.', 'utf8');
   const header = Buffer.from('MIRAGE\x01\x03', 'binary');
   
-  const { ciphertext, tag } = encryptMirageC4(payloadBuf, key1024, ivs, header);
+  const { ciphertext, tag } = encryptMirageC4(payloadBuf, key1024, ivs, header, salt);
   assert(ciphertext.length === payloadBuf.length, 'Mirage-C4 encrypt preserves payload length (CTR/stream cascade)');
   
-  const decrypted = decryptMirageC4(ciphertext, key1024, ivs, tag, header);
+  const decrypted = decryptMirageC4(ciphertext, key1024, ivs, tag, header, salt);
   assert(decrypted.toString('utf8') === payloadBuf.toString('utf8'), 'Mirage-C4 decrypt successfully restores original payload');
+
+  // 2b. Mirage-C4 IV tampering detection test
+  try {
+    const tamperedIvs = {
+      ...ivs,
+      ivCamellia: Buffer.alloc(16) // Modify IV to trigger failure
+    };
+    decryptMirageC4(ciphertext, key1024, tamperedIvs, tag, header, salt);
+    assert(false, 'Mirage-C4 decrypt failed to detect tampered IV (should have thrown)');
+  } catch (e) {
+    assert(true, 'Mirage-C4 decrypt successfully throws on tampered IV (Integrity verified)');
+  }
 
   // 3. Steganography hiding and recovery test
   const fakeCarrier = Buffer.from('FAKE_PNG_CARRIER_IMAGE_BYTES_1234567890', 'utf8');

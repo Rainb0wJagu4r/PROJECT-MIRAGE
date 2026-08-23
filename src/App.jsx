@@ -1000,6 +1000,11 @@ export default function App() {
                     {showEncPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {encPassword && encPassword.length < 10 && (
+                  <div style={{ color: 'var(--color-red)', fontSize: '0.72rem', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+                    ⚠️ {lang === 'es' ? 'La contraseña debe tener al menos 10 caracteres.' : 'Password must be at least 10 characters.'}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -1024,6 +1029,11 @@ export default function App() {
                     {showEncDfPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {encDoubleFactorPassword && encDoubleFactorPassword.length < 10 && (
+                  <div style={{ color: 'var(--color-red)', fontSize: '0.72rem', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+                    ⚠️ {lang === 'es' ? 'El segundo secreto debe tener al menos 10 caracteres.' : 'Secondary Secret must be at least 10 characters.'}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -1101,7 +1111,13 @@ export default function App() {
                 <button 
                   type="submit" 
                   className="action-btn"
-                  disabled={!encPassword || (!encFile && !encLocalPath)}
+                  disabled={
+                    !encPassword || 
+                    encPassword.length < 10 || 
+                    (encDoubleFactorPassword && encDoubleFactorPassword.length < 10) || 
+                    (encSettings.duressEnabled && encSettings.duressPassword && encSettings.duressPassword.length < 10) || 
+                    (!encFile && !encLocalPath)
+                  }
                 >
                   <Lock size={20} />
                   {t.encryptBtn}
