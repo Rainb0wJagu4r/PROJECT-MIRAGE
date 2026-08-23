@@ -2,6 +2,13 @@
 
 Project Mirage is a secure, desktop-grade local web application for symmetric file encryption using AES-256-GCM and Mirage-C4. It is designed to run entirely offline on loopback localhost, bypassing browser sandbox limitations while keeping private file data strictly on the host system.
 
+> [!WARNING]
+> **Project Origin & Active Development Status**
+> - 🇲🇽 **Born in Mexico:** This project is proud to be born in Mexico.
+> - **In Development:** The software is still under active development and should be treated as experimental.
+> - **NIST SP 800-22 Audited:** The randomness and entropy of our `.wraith` encrypted archives have been audited using the NIST SP 800-22 statistical suite. The full analysis codebase and official audit reports are published here: [PROJECT-MIRAGE-NIST-Analyze-results](https://github.com/Rainb0wJagu4r/PROJECT-MIRAGE-NIST-Analyze-results).
+> - **Open to Audits:** This project is open to public security audits and code reviews. We highly appreciate any feedback, contributions, or advice to help us continue learning and working on secure cryptographic applications.
+
 ---
 
 ## Technical Features
