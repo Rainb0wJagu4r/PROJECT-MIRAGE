@@ -376,11 +376,37 @@ function serializePayload(filename, fileBuffer, expirationTime = 0) {
 }
 
 function deserializePayload(buffer) {
+  // Bounds validation: a genuine Mirage archive always has at least the
+  // fixed 10-byte header (8-byte expiration + 2-byte filename length).
+  // Without this check, a truncated/corrupted decrypted payload causes
+  // Buffer's internal methods to throw a raw Node RangeError instead of
+  // a clean, user-facing error.
+  if (!Buffer.isBuffer(buffer) || buffer.length < 10) {
+    throw new Error('Payload Error: Decrypted content is too short to be a valid Mirage payload (corrupted or truncated).');
+  }
+
   const expirationTime = buffer.readDoubleBE(0);
   const filenameLen = buffer.readUInt16BE(8);
+
+  if (filenameLen > buffer.length - 10) {
+    throw new Error('Payload Error: Malformed filename length field (corrupted payload).');
+  }
+
   const filename = buffer.toString('utf8', 10, 10 + filenameLen);
-  const fileSize = buffer.readDoubleBE(10 + filenameLen);
-  const fileData = buffer.subarray(10 + filenameLen + 8, 10 + filenameLen + 8 + fileSize);
+
+  const fileSizeOffset = 10 + filenameLen;
+  if (fileSizeOffset + 8 > buffer.length) {
+    throw new Error('Payload Error: Malformed payload header (corrupted payload).');
+  }
+
+  const fileSize = buffer.readDoubleBE(fileSizeOffset);
+  const dataStart = fileSizeOffset + 8;
+
+  if (!Number.isFinite(fileSize) || fileSize < 0 || dataStart + fileSize > buffer.length) {
+    throw new Error('Payload Error: Malformed file size field (corrupted payload).');
+  }
+
+  const fileData = buffer.subarray(dataStart, dataStart + fileSize);
   return { expirationTime, filename, fileData };
 }
 
