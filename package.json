@@ -41,7 +41,8 @@
         "dir",
         "dmg"
       ],
-      "identity": null
+      "identity": null,
+      "icon": "resources/nobug.icns"
     },
     "win": {
       "target": "nsis",
@@ -52,7 +53,7 @@
         "ext": "wraith",
         "name": "Project Mirage Encrypted Archive",
         "role": "Editor",
-        "icon": "resources/nobug.ico"
+        "icon": "resources/nobug"
       }
     ],
     "files": [
