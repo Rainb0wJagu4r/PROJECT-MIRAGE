@@ -43,13 +43,26 @@
       ],
       "identity": null
     },
+    "win": {
+      "target": "nsis",
+      "icon": "resources/nobug.ico"
+    },
+    "fileAssociations": [
+      {
+        "ext": "wraith",
+        "name": "Project Mirage Encrypted Archive",
+        "role": "Editor",
+        "icon": "resources/nobug.ico"
+      }
+    ],
     "files": [
       "dist/**/*",
       "certs/**/*",
       "src/token.json",
       "main.js",
       "server.js",
-      "package.json"
+      "package.json",
+      "resources/**/*"
     ],
     "directories": {
       "output": "release"
