@@ -42,11 +42,11 @@
         "dmg"
       ],
       "identity": null,
-      "icon": "resources/nobug.icns"
+      "icon": "resources/app_icon.icns"
     },
     "win": {
       "target": "nsis",
-      "icon": "resources/nobug.ico"
+      "icon": "resources/app_icon.ico"
     },
     "fileAssociations": [
       {
