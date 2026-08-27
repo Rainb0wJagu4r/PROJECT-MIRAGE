@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Classes\.wraith]
+@="ProjectMirage.wraith"
+"Content Type"="application/x-project-mirage-archive"
+"PerceivedType"="document"
+
+[HKEY_CURRENT_USER\Software\Classes\ProjectMirage.wraith]
+@="Project Mirage Encrypted Archive"
+"FriendlyTypeName"="Project Mirage Encrypted Archive (.wraith)"
+
+[HKEY_CURRENT_USER\Software\Classes\ProjectMirage.wraith\DefaultIcon]
+@="\"C:\\Users\\NHK-DB\\Downloads\\PROJECT-MIRAGE-mainH\\PROJECT-MIRAGE-main\\resources\\nobug.ico\",0"
