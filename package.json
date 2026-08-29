@@ -13,7 +13,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "app:dev": "concurrently \"NODE_ENV=development npm run client\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
-    "app:package": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder build --mac"
+    "app:package": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder build --mac",
+    "test": "node test-security.mjs",
+    "test:security": "node test-security.mjs",
+    "test:kat": "node -e \"import('./lib/kat.js').then(m=>{const r=m.summarizeKats();console.log(JSON.stringify(r,null,2));process.exit(r.overall?0:1)})\""
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -59,7 +62,6 @@
     "files": [
       "dist/**/*",
       "certs/**/*",
-      "src/token.json",
       "main.js",
       "server.js",
       "package.json",

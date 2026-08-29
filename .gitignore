@@ -6,5 +6,12 @@ src/token.json
 certs/
 release/
 
-
-
+# MIRAGE-017: config local con rutas personales, vaults y fragmentos
+emergency-config.json
+INSTRUCCIONES.md
+*.wraith
+*.share1
+*.share2
+*.share3
+MIRAGE_TOKEN
+emergency-audit.log

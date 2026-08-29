@@ -1,0 +1,17 @@
+{
+  "targetPaths": [
+    "C:\\\\Users\\\\TU_USUARIO\\\\Documents\\\\CarpetaAProteger",
+    "/home/tu_usuario/Documentos/CarpetaAProteger"
+  ],
+  "_comment_targetPaths": "Rutas a incluir en el vault de emergencia. NO uses rutas reales en un repo publico.",
+  "outputPath": "C:\\\\Users\\\\TU_USUARIO\\\\Documents\\\\MirageVault",
+  "backupPath": "C:\\\\Users\\\\TU_USUARIO\\\\Documents\\\\MirageBackups",
+  "algorithm": "mirage-c4",
+  "hardwareLock": false,
+  "_comment_hardwareLock": "Si es true, el vault SOLO se abre en esta maquina. Si cambias de equipo pierdes el acceso.",
+  "bucketPadding": true,
+  "_comment_bucketPadding": "Padme: cuantiza el tamano (~12% de sobrecoste). Reduce, NO elimina, la fuga por tamano (MIRAGE-011).",
+  "expirationDays": 0,
+  "_comment_expirationDays": "0 = sin caducidad. ADVERTENCIA (MIRAGE-010): el TTL NO es un control criptografico. Quien tenga el archivo y la contrasena puede ignorarlo con otro cliente.",
+  "_comment_password": "NUNCA guardes la contrasena en este archivo. Se pide en tiempo de ejecucion."
+}

@@ -8,20 +8,82 @@ import { execSync } from 'child_process';
 import os from 'os';
 import { fileURLToPath } from 'url';
 
+// ---------------------------------------------------------------------------
+// Núcleo criptográfico auditado (ver lib/*.js).
+//
+// Todo el material sensible se maneja en estos módulos, cada uno pequeño y con
+// pruebas propias en test-security.mjs. server.js queda como capa de transporte
+// y de reglas de negocio: NO reimplementa criptografía.
+// ---------------------------------------------------------------------------
+import { OpaqueError, PolicyError, toPublicError, sanitizeSteps } from './lib/errors.js';
+import { safeJoin, safeBasename, requireUserPath } from './lib/paths.js';
+import { requirePasswordPolicy, MIN_PASSWORD_LENGTH } from './lib/kdf.js';
+import { encryptVault, decryptVault, ALGORITHMS } from './lib/vault.js';
+import {
+  serializePayload, deserializePayload,
+  serializeMultiPayload, deserializeMultiPayload, isMultiPayload,
+  appendToCarrier, extractFromCarrier,
+} from './lib/format.js';
+import { splitSecret, combineShares } from './lib/shamir.js';
+import { padmeLength } from './lib/padding.js';
+import { summarizeKats } from './lib/kat.js';
+import {
+  isLegacyV1, decryptLegacyV1, stripLegacySteg,
+  deserializePayloadV1, migrateNotice,
+} from './lib/legacy.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3001;
 
-// Generate runtime API token and write it to local JSON file
+// ---------------------------------------------------------------------------
+// Token de la API local (MIRAGE-012)
+//
+// ANTES: el token se escribía en src/token.json, que Vite empaquetaba en el
+// bundle de producción (verificado: aparecía en dist/assets/index-*.js) y que
+// además se pasaba en la URL de la ventana (?token=...), quedando en el
+// historial y en los logs del renderer.
+//
+// AHORA: el token vive SOLO en la memoria de este proceso. Electron lo obtiene
+// por IPC (ver main.js y preload.cjs) y el renderer lo recibe a través del
+// puente contextBridge, nunca por disco ni por la URL.
+//
+// Si alguien ejecuta el servidor a mano (npm run server) sin Electron, puede
+// leer el token del stdout o de MIRAGE_TOKEN_FILE, que es una decisión
+// explícita del usuario y no algo que se empaquete en la aplicación.
+// ---------------------------------------------------------------------------
 export const API_TOKEN = crypto.randomBytes(32).toString('hex');
+const API_TOKEN_HASH = crypto.createHash('sha256').update(API_TOKEN).digest();
+
+// Escritura OPCIONAL del token, solo si el usuario la pide explícitamente.
+// Nunca apunta a src/, así que no puede acabar en el bundle.
+if (process.env.MIRAGE_TOKEN_FILE) {
+  try {
+    fs.writeFileSync(process.env.MIRAGE_TOKEN_FILE, API_TOKEN, { mode: 0o600 });
+    console.log(`[Security] Token escrito en ${process.env.MIRAGE_TOKEN_FILE} (permisos 0600) por petición explícita.`);
+  } catch (err) {
+    console.warn(`[Security] No se pudo escribir el token: ${err.message}`);
+  }
+}
+
+// Limpieza de restos de versiones anteriores: si existe src/token.json de una
+// instalación previa, lo borramos para que no siga filtrando un token viejo.
 try {
-  const tokenPath = path.join(__dirname, 'src', 'token.json');
-  fs.writeFileSync(tokenPath, JSON.stringify({ token: API_TOKEN }, null, 2));
-  console.log(`[Security] API Token generated and written to ${tokenPath}`);
-} catch (err) {
-  console.warn('[Security] Failed to write API Token to disk (Read-only filesystem under ASAR package/Darwin bundle), fallback to memory-passing.');
+  const legacyTokenPath = path.join(__dirname, 'src', 'token.json');
+  if (fs.existsSync(legacyTokenPath)) {
+    fs.writeFileSync(legacyTokenPath, JSON.stringify({
+      token: '',
+      _note: 'Obsoleto. El token ya no se escribe en disco (MIRAGE-012). Se entrega por IPC.',
+    }, null, 2));
+    console.log('[Security] src/token.json heredado neutralizado (ya no se usa).');
+  }
+} catch { /* no es crítico */ }
+
+/** Devuelve el token a los procesos locales autorizados (usado por main.js). */
+export function getApiToken() {
+  return API_TOKEN;
 }
 
 // Middlewares
@@ -36,20 +98,80 @@ app.use(express.raw({ type: 'application/octet-stream', limit: '200mb' }));
 // Token authorization middleware
 const authenticateToken = (req, res, next) => {
   const clientToken = req.headers['x-api-token'];
-  if (!clientToken) {
+  if (!clientToken || typeof clientToken !== 'string') {
     return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing API Token.' });
   }
-  
-  // Constant-time timingSafeEqual comparison by hashing to avoid length leakage/throws
+
+  // Comparación en tiempo constante sobre hashes de longitud fija: evita tanto
+  // la fuga por longitud como la excepción de timingSafeEqual con tamaños
+  // distintos. El hash del servidor se calcula UNA vez al arrancar.
   const clientHash = crypto.createHash('sha256').update(clientToken).digest();
-  const serverHash = crypto.createHash('sha256').update(API_TOKEN).digest();
-  
-  if (!crypto.timingSafeEqual(clientHash, serverHash)) {
+  if (!crypto.timingSafeEqual(clientHash, API_TOKEN_HASH)) {
     return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing API Token.' });
   }
   next();
 };
 app.use('/api', authenticateToken);
+
+// ---------------------------------------------------------------------------
+// Limitación de trabajo criptográfico concurrente (MIRAGE-013)
+//
+// Cada derivación de clave cuesta ~435 ms y 128 MB de RAM (scrypt N=2^17).
+// Sin límite, unas pocas peticiones simultáneas agotan la memoria del proceso
+// y lo tumban: una denegación de servicio trivial contra el propio equipo,
+// alcanzable por cualquier proceso local que consiga el token.
+//
+// Aquí se aplican dos controles:
+//   1. Un semáforo: como máximo MAX_CONCURRENT_KDF operaciones a la vez.
+//   2. Un retardo creciente tras cada fallo de autenticación, que encarece la
+//      fuerza bruta local sin castigar al uso legítimo.
+//
+// Aviso honesto: esto protege la DISPONIBILIDAD del servicio local. NO protege
+// contra un atacante que copie el archivo .wraith y lo ataque sin usar esta
+// aplicación; frente a eso, la única defensa es el coste de scrypt y la calidad
+// de la contraseña.
+// ---------------------------------------------------------------------------
+const MAX_CONCURRENT_KDF = 2;
+let activeKdfOps = 0;
+const kdfQueue = [];
+
+function acquireKdfSlot() {
+  if (activeKdfOps < MAX_CONCURRENT_KDF) {
+    activeKdfOps++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => kdfQueue.push(resolve));
+}
+
+function releaseKdfSlot() {
+  const next = kdfQueue.shift();
+  if (next) next();
+  else activeKdfOps = Math.max(0, activeKdfOps - 1);
+}
+
+/** Retardo tras fallos de autenticación, acotado para no colgar la interfaz. */
+const failureState = { count: 0, lastFailure: 0 };
+const FAILURE_WINDOW_MS = 60_000;
+const MAX_BACKOFF_MS = 4_000;
+
+function currentBackoffMs() {
+  if (Date.now() - failureState.lastFailure > FAILURE_WINDOW_MS) {
+    failureState.count = 0;
+    return 0;
+  }
+  return Math.min(MAX_BACKOFF_MS, failureState.count * 250);
+}
+
+function recordAuthFailure() {
+  failureState.count++;
+  failureState.lastFailure = Date.now();
+}
+
+function recordAuthSuccess() {
+  failureState.count = 0;
+}
+
+const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
 
 function getHardwareUUID() {
   try {
@@ -209,205 +331,137 @@ function scrubPng(buffer) {
   return Buffer.concat(chunks);
 }
 
-// Scrypt Key Derivation Wrapper (Symmetric Double-Layer Secret + Hardware Pepper Lock)
-function deriveKey(password, salt, hardwareLockEnabled, doubleFactorPassword = '', keySize = 32) {
-  let combinedPassword = password;
-  
-  if (doubleFactorPassword) {
-    combinedPassword += '__SECSEC__' + doubleFactorPassword;
+// ---------------------------------------------------------------------------
+// DERIVACIÓN DE CLAVES Y CIFRADO
+//
+// Esta sección solía contener `deriveKey`, `encryptMirageC4` y `decryptMirageC4`.
+// Se han ELIMINADO de aquí y viven ahora en lib/kdf.js, lib/cascade.js y
+// lib/vault.js, por estos motivos concretos:
+//
+//   MIRAGE-002  La cascada Camellia-CTR → ARIA-CTR → ChaCha20 → GCM era una
+//               composición de cuatro cifrados de FLUJO, y por tanto colapsaba
+//               en P ⊕ KS_combinado. Con dos plaintextos conocidos bajo la
+//               misma clave y los mismos IVs se cumplía C1^C2 == P1^P2, y el
+//               keystream extraído descifraba cualquier otro mensaje.
+//               Verificado empíricamente durante la auditoría.
+//               → lib/cascade.js usa Camellia-CBC y ARIA-CBC (no conmutativos).
+//
+//   MIRAGE-006  Las cuatro subclaves se obtenían troceando 128 bytes de una
+//               única llamada a scrypt. → HKDF-Expand con etiquetas únicas.
+//
+//   MIRAGE-007  Concatenar los secretos con `__SECSEC__` y `__HW__` permitía
+//               colisiones: deriveKey('a__SECSEC__b') producía exactamente la
+//               misma clave que deriveKey('a', doubleFactor='b').
+//               Verificado empíricamente. → codificación TLV inyectiva.
+//
+// Se conserva `getHardwareIdIfEnabled` como único puente entre la política de
+// la aplicación (¿hay hardware-lock?) y el módulo de derivación.
+// ---------------------------------------------------------------------------
+
+/**
+ * Devuelve el identificador de hardware si el bloqueo está activo, o '' si no.
+ * Centralizar esto evita que el resto del código llame a getHardwareUUID() de
+ * forma inconsistente.
+ */
+function getHardwareIdIfEnabled(hardwareLockEnabled) {
+  if (!hardwareLockEnabled) return '';
+  const id = getHardwareUUID();
+  if (!id || typeof id !== 'string') {
+    throw new PolicyError(
+      'Se ha solicitado bloqueo por hardware pero no se ha podido obtener un '
+      + 'identificador estable de este equipo.'
+    );
   }
-  
-  if (hardwareLockEnabled) {
-    const hwUuid = getHardwareUUID();
-    combinedPassword += '__HW__' + hwUuid;
-  }
-  
-  // Hardened scrypt key derivation for robust offline protection (128MB RAM footprint)
-  return crypto.scryptSync(combinedPassword, salt, keySize, {
-    N: 131072,
-    r: 8,
-    p: 1,
-    maxmem: 256 * 1024 * 1024
-  });
+  return id;
 }
 
-// Custom 4-Layer Cascaded Symmetric Cipher (Mirage-C4)
-// Structure: Camellia-256-CTR -> ARIA-256-CTR -> ChaCha20 -> AES-256-GCM
-function encryptMirageC4(payloadBuf, key128Bytes, ivs, header, salt) {
-  const keyCamellia = key128Bytes.subarray(0, 32);
-  const keyAria = key128Bytes.subarray(32, 64);
-  const keyChaCha = key128Bytes.subarray(64, 96);
-  const keyAes = key128Bytes.subarray(96, 128);
+// ---------------------------------------------------------------------------
+// ENCAPSULADO EN PORTADOR, PADDING Y SERIALIZACION
+//
+// Las versiones locales de estas funciones se han sustituido por las de
+// lib/format.js y lib/padding.js. Motivos:
+//
+//   MIRAGE-003  El trailer usaba una longitud de 32 bits que NO se validaba al
+//               leer. Un valor manipulado producia un offset negativo
+//               (verificado: -4294966965) y subarray lo truncaba en silencio en
+//               lugar de fallar. Ahora la longitud es de 64 bits y se comprueba
+//               contra el tamano real antes de cortar.
+//               Igualmente, serializePayload escribia las longitudes como
+//               `double` (writeDoubleBE), un tipo en coma flotante para contar
+//               bytes. Ahora son enteros sin signo de 64 bits.
+//
+//   MIRAGE-011  applySizePadding anadia entre 4 KB y 5 MB aleatorios. Medido
+//               sobre 20.000 muestras: mediana de 137 KB, y un archivo de 1 KB
+//               seguia siendo perfectamente distinguible de uno de 50 MB.
+//               Ahora se usa Padme (Nikitin et al., PETS 2019), que cuantiza la
+//               longitud a un conjunto pequeno de buckets con un sobrecoste
+//               acotado (~12% como maximo, 1,11% en un archivo de 244 MB).
+//
+// AVISO HONESTO sobre el "modo esteganografico": adjuntar datos al final de un
+// PNG o JPEG NO es esteganografia. El archivo crece, el trailer es una firma
+// fija en texto claro y cualquier herramienta que compare el tamano declarado
+// por el formato de imagen con el tamano real lo detecta al instante. Sirve
+// para que el archivo se abra como imagen, no para ocultarlo de un analisis.
+// ---------------------------------------------------------------------------
 
-  const ivCamellia = ivs.ivCamellia;
-  const ivAria = ivs.ivAria;
-  const ivChaCha = ivs.ivChaCha;
-  const ivAes = ivs.ivAes;
+/** PNG transparente de 1x1 usado cuando no se indica un portador. */
+const DEFAULT_CARRIER_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64'
+);
 
-  // Layer 1: Camellia-256-CTR
-  const cipher1 = crypto.createCipheriv('camellia-256-ctr', keyCamellia, ivCamellia);
-  let state = Buffer.concat([cipher1.update(payloadBuf), cipher1.final()]);
-
-  // Layer 2: ARIA-256-CTR
-  const cipher2 = crypto.createCipheriv('aria-256-ctr', keyAria, ivAria);
-  state = Buffer.concat([cipher2.update(state), cipher2.final()]);
-
-  // Layer 3: ChaCha20
-  const cipher3 = crypto.createCipheriv('chacha20', keyChaCha, ivChaCha);
-  state = Buffer.concat([cipher3.update(state), cipher3.final()]);
-
-  // Layer 4: AES-256-GCM (AEAD final authenticated layer)
-  const cipher4 = crypto.createCipheriv('aes-256-gcm', keyAes, ivAes);
-  
-  // Consolidate AAD to authenticate all metadata: header || salt || ivs
-  const aad = Buffer.concat([
-    header || Buffer.alloc(0),
-    salt || Buffer.alloc(0),
-    ivCamellia,
-    ivAria,
-    ivChaCha,
-    ivAes
-  ]);
-  cipher4.setAAD(aad);
-
-  const ciphertext = Buffer.concat([cipher4.update(state), cipher4.final()]);
-  const tag = cipher4.getAuthTag();
-
-  return { ciphertext, tag };
-}
-
-function decryptMirageC4(ciphertext, key128Bytes, ivs, tag, header, salt) {
-  const keyCamellia = key128Bytes.subarray(0, 32);
-  const keyAria = key128Bytes.subarray(32, 64);
-  const keyChaCha = key128Bytes.subarray(64, 96);
-  const keyAes = key128Bytes.subarray(96, 128);
-
-  const ivCamellia = ivs.ivCamellia;
-  const ivAria = ivs.ivAria;
-  const ivChaCha = ivs.ivChaCha;
-  const ivAes = ivs.ivAes;
-
-  // Layer 4: AES-256-GCM decipher (authentication check first)
-  const decipher4 = crypto.createDecipheriv('aes-256-gcm', keyAes, ivAes);
-  decipher4.setAuthTag(tag);
-  
-  // Consolidate AAD to verify all metadata: header || salt || ivs
-  const aad = Buffer.concat([
-    header || Buffer.alloc(0),
-    salt || Buffer.alloc(0),
-    ivCamellia,
-    ivAria,
-    ivChaCha,
-    ivAes
-  ]);
-  decipher4.setAAD(aad);
-
-  let state = Buffer.concat([decipher4.update(ciphertext), decipher4.final()]);
-
-  // Layer 3: ChaCha20 decipher
-  const decipher3 = crypto.createDecipheriv('chacha20', keyChaCha, ivChaCha);
-  state = Buffer.concat([decipher3.update(state), decipher3.final()]);
-
-  // Layer 2: ARIA-256-CTR decipher
-  const decipher2 = crypto.createDecipheriv('aria-256-ctr', keyAria, ivAria);
-  state = Buffer.concat([decipher2.update(state), decipher2.final()]);
-
-  // Layer 1: Camellia-256-CTR decipher
-  const decipher1 = crypto.createDecipheriv('camellia-256-ctr', keyCamellia, ivCamellia);
-  return Buffer.concat([decipher1.update(state), decipher1.final()]);
-}
-
-// Trailing Payload Encapsulation (Carrier Appending) helper
-// Appends encrypted payload to the end of carrier file bytes, with a trailing 4-byte length and 8-byte magic tag
+/**
+ * Adjunta el envelope cifrado al final de un archivo portador.
+ * El portador lo elige el USUARIO, asi que su ruta se valida con
+ * requireUserPath (rutas de usuario) y no con safeJoin (rutas del payload).
+ */
 function applySteganography(carrierPath, encryptedPayload, addStep) {
-  let carrierBuffer;
-  
+  let carrierBuffer = null;
+
   if (carrierPath) {
-    let resolvedCarrierPath = carrierPath;
-    if (resolvedCarrierPath.startsWith('~')) {
-      resolvedCarrierPath = path.join(os.homedir(), resolvedCarrierPath.slice(1));
-    }
-    if (fs.existsSync(resolvedCarrierPath)) {
-      carrierBuffer = fs.readFileSync(resolvedCarrierPath);
-      addStep(`Carrier Appending: Loaded carrier image from ${resolvedCarrierPath} (${carrierBuffer.length} bytes)`);
+    const resolved = resolveUserPath(carrierPath);
+    if (fs.existsSync(resolved)) {
+      const stat = fs.statSync(resolved);
+      if (!stat.isFile()) {
+        throw new PolicyError('La ruta del portador no es un archivo.');
+      }
+      if (stat.size > 200 * 1024 * 1024) {
+        throw new PolicyError('El archivo portador supera el limite de 200 MB.');
+      }
+      carrierBuffer = fs.readFileSync(resolved);
+      addStep(`Portador cargado: ${resolved} (${carrierBuffer.length} bytes)`);
+    } else {
+      throw new PolicyError(`No se encuentra el archivo portador: ${resolved}`);
     }
   }
 
   if (!carrierBuffer) {
-    // Generate a default valid 1x1 transparent PNG if no carrier was specified
-    carrierBuffer = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
-      'base64'
-    );
-    addStep('Carrier Appending: Using default transparent PNG carrier');
+    carrierBuffer = DEFAULT_CARRIER_PNG;
+    addStep('Portador: usando el PNG transparente por defecto');
   }
 
-  const payloadLen = encryptedPayload.length;
-  const lenBuf = Buffer.alloc(4);
-  lenBuf.writeUInt32BE(payloadLen, 0);
-  const signature = Buffer.from('MIRGSTEG', 'ascii');
-
-  return Buffer.concat([carrierBuffer, encryptedPayload, lenBuf, signature]);
-}
-
-// Signal-style exponential size obfuscation
-function applySizePadding(buffer) {
-  // Random padding between 4KB and 5MB using logarithmic spread
-  const padSize = Math.min(
-    5 * 1024 * 1024,
-    Math.floor(Math.exp(crypto.randomInt(12, 85) / 10) * 1024)
+  addStep(
+    'Aviso: adjuntar datos al final de una imagen NO es esteganografia. '
+    + 'El trailer es detectable comparando el tamano real con el declarado por el formato.'
   );
-  const padding = crypto.randomBytes(padSize);
-  return Buffer.concat([buffer, padding]);
+  return appendToCarrier(carrierBuffer, encryptedPayload);
 }
 
-// Serialization format for encrypted files:
-// [Expiration Timestamp (8 bytes, double)] [Filename len (2 bytes)] [Filename (UTF-8)] [File size (8 bytes, double)] [File content]
-function serializePayload(filename, fileBuffer, expirationTime = 0) {
-  const filenameBuf = Buffer.from(filename, 'utf8');
-  const headerBuf = Buffer.alloc(8 + 2 + filenameBuf.length + 8);
-  
-  headerBuf.writeDoubleBE(expirationTime, 0);
-  headerBuf.writeUInt16BE(filenameBuf.length, 8);
-  filenameBuf.copy(headerBuf, 10);
-  headerBuf.writeDoubleBE(fileBuffer.length, 10 + filenameBuf.length);
-  
-  return Buffer.concat([headerBuf, fileBuffer]);
-}
-
-function deserializePayload(buffer) {
-  // Bounds validation: a genuine Mirage archive always has at least the
-  // fixed 10-byte header (8-byte expiration + 2-byte filename length).
-  // Without this check, a truncated/corrupted decrypted payload causes
-  // Buffer's internal methods to throw a raw Node RangeError instead of
-  // a clean, user-facing error.
-  if (!Buffer.isBuffer(buffer) || buffer.length < 10) {
-    throw new Error('Payload Error: Decrypted content is too short to be a valid Mirage payload (corrupted or truncated).');
+/**
+ * Expande `~` y devuelve una ruta absoluta para rutas indicadas por el USUARIO.
+ *
+ * Importante: esto NO es contencion de rutas. El usuario tiene derecho a
+ * escribir donde quiera en su propio equipo. La contencion (safeJoin) se aplica
+ * solo a las rutas que vienen DENTRO de un archivo cifrado, que son datos no
+ * confiables. Confundir ambos casos fue el origen de MIRAGE-001.
+ */
+function resolveUserPath(p, label = 'ruta') {
+  requireUserPath(p, label);
+  let out = String(p);
+  if (out.startsWith('~')) {
+    out = path.join(os.homedir(), out.slice(1));
   }
-
-  const expirationTime = buffer.readDoubleBE(0);
-  const filenameLen = buffer.readUInt16BE(8);
-
-  if (filenameLen > buffer.length - 10) {
-    throw new Error('Payload Error: Malformed filename length field (corrupted payload).');
-  }
-
-  const filename = buffer.toString('utf8', 10, 10 + filenameLen);
-
-  const fileSizeOffset = 10 + filenameLen;
-  if (fileSizeOffset + 8 > buffer.length) {
-    throw new Error('Payload Error: Malformed payload header (corrupted payload).');
-  }
-
-  const fileSize = buffer.readDoubleBE(fileSizeOffset);
-  const dataStart = fileSizeOffset + 8;
-
-  if (!Number.isFinite(fileSize) || fileSize < 0 || dataStart + fileSize > buffer.length) {
-    throw new Error('Payload Error: Malformed file size field (corrupted payload).');
-  }
-
-  const fileData = buffer.subarray(dataStart, dataStart + fileSize);
-  return { expirationTime, filename, fileData };
+  return path.resolve(out);
 }
 
 // System Hardware UUID API
@@ -498,7 +552,7 @@ function runCryptoSelfTests() {
 // System Status / Monitor API
 app.get('/api/system-status', (req, res) => {
   const memoryUsage = process.memoryUsage();
-  const selfTests = runCryptoSelfTests();
+  const selfTests = summarizeKats();
   res.json({
     status: 'online',
     uptime: Math.floor(process.uptime()),
@@ -506,8 +560,12 @@ app.get('/api/system-status', (req, res) => {
       rss: Math.round(memoryUsage.rss / (1024 * 1024)),
       heapUsed: Math.round(memoryUsage.heapUsed / (1024 * 1024))
     },
-    version: '1.0.0',
-    upToDate: true,
+    version: '2.0.0-audited',
+    // MIRAGE-016: 'upToDate: true' estaba cableado a mano y no comprobaba nada.
+    // Se elimina. selfTests son ahora Known Answer Tests contra vectores
+    // publicados (RFC 8439, RFC 5794, RFC 3713, RFC 5869, RFC 7914,
+    // NIST SP 800-38A/D). Pasar los KAT solo demuestra que las
+    // primitivas estan bien invocadas, NO que el sistema sea seguro.
     selfTests
   });
 });
@@ -581,6 +639,96 @@ app.get('/api/autocomplete', (req, res) => {
   }
 });
 
+// Visual Directory & File System Explorer API
+app.get('/api/system-shortcuts', (req, res) => {
+  const home = os.homedir();
+  const shortcuts = [
+    { name: 'Documentos', path: path.join(home, 'Documents'), icon: 'document' },
+    { name: 'Escritorio', path: path.join(home, 'Desktop'), icon: 'desktop' },
+    { name: 'Descargas', path: path.join(home, 'Downloads'), icon: 'download' },
+    { name: 'Imágenes', path: path.join(home, 'Pictures'), icon: 'image' },
+    { name: 'Carpeta Personal', path: home, icon: 'home' }
+  ].filter(s => fs.existsSync(s.path));
+
+  // Windows Drives
+  const drives = [];
+  if (process.platform === 'win32') {
+    const letters = 'CDEFGHIJKLMNOPQRSTUVWXYZ';
+    for (const letter of letters) {
+      const drivePath = `${letter}:\\`;
+      try {
+        if (fs.existsSync(drivePath)) {
+          drives.push({ name: `Disco Local (${letter}:)`, path: drivePath, icon: 'drive' });
+        }
+      } catch (e) {}
+    }
+  } else {
+    drives.push({ name: 'Raíz del Sistema (/)', path: '/', icon: 'drive' });
+  }
+
+  res.json({ shortcuts, drives });
+});
+
+app.get('/api/browse-dir', (req, res) => {
+  let queryPath = req.query.path || os.homedir();
+  if (queryPath.startsWith('~')) {
+    queryPath = path.join(os.homedir(), queryPath.slice(1));
+  }
+
+  try {
+    const resolved = path.resolve(queryPath);
+    if (!fs.existsSync(resolved)) {
+      return res.status(404).json({ error: 'Directory does not exist' });
+    }
+
+    const stat = fs.statSync(resolved);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+
+    const entries = fs.readdirSync(resolved, { withFileTypes: true });
+    const items = [];
+
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') && entry.name !== '.git') continue;
+      const full = path.join(resolved, entry.name);
+      let size = 0;
+      let isDir = entry.isDirectory();
+      try {
+        if (!isDir) {
+          const s = fs.statSync(full);
+          size = s.size;
+        }
+      } catch (e) {}
+
+      items.push({
+        name: entry.name,
+        path: full,
+        isDirectory: isDir,
+        size
+      });
+    }
+
+    // Sort folders first
+    items.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const parentDir = path.dirname(resolved);
+    const hasParent = parentDir !== resolved;
+
+    res.json({
+      currentPath: resolved,
+      parentPath: hasParent ? parentDir : null,
+      items
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // File information and hashing API
 app.get('/api/file-info', (req, res) => {
   let queryPath = req.query.path || '';
@@ -614,8 +762,9 @@ app.post('/api/encrypt', async (req, res) => {
     console.log(`[Encrypt] ${msg}`);
   };
 
+  // MIRAGE-013: limitamos el trabajo criptográfico concurrente.
+  await acquireKdfSlot();
   try {
-    // We support uploading raw binary bytes (using express.raw middleware) or passing JSON with file paths
     let fileBuffer;
     let filename;
     let sourceFilePath = null;
@@ -623,348 +772,300 @@ app.post('/api/encrypt', async (req, res) => {
 
     if (req.headers['content-type'] === 'application/octet-stream') {
       fileBuffer = req.body;
-      filename = req.headers['x-file-name'] || 'untitled.bin';
-      settings = JSON.parse(req.headers['x-settings'] || '{}');
-      addStep(`Received uploaded file: ${filename} (${fileBuffer.length} bytes)`);
+      // El nombre viene de una cabecera HTTP: lo saneamos antes de usarlo.
+      filename = safeBasename(req.headers['x-file-name'] || 'untitled.bin', 'untitled.bin');
+      try {
+        settings = JSON.parse(req.headers['x-settings'] || '{}');
+      } catch {
+        throw new PolicyError('La cabecera x-settings no contiene JSON válido.');
+      }
+      addStep(`Archivo recibido: ${filename} (${fileBuffer.length} bytes)`);
     } else {
-      const body = req.body;
-      sourceFilePath = body.filePath;
-      if (!sourceFilePath) {
-        throw new Error('No file provided (upload or local filePath required)');
+      const body = req.body || {};
+      if (!body.filePath) {
+        throw new PolicyError('No se ha indicado ningún archivo (ni subida ni filePath local).');
       }
-      // Resolve home shorthand ~
-      if (sourceFilePath.startsWith('~')) {
-        sourceFilePath = path.join(os.homedir(), sourceFilePath.slice(1));
-      }
-      
+      sourceFilePath = resolveUserPath(body.filePath, 'archivo de origen');
+
       if (!fs.existsSync(sourceFilePath)) {
-        throw new Error(`File not found: ${sourceFilePath}`);
+        throw new PolicyError(`No se encuentra el archivo: ${sourceFilePath}`);
+      }
+      const stat = fs.statSync(sourceFilePath);
+      if (!stat.isFile()) {
+        throw new PolicyError('La ruta de origen no es un archivo regular.');
+      }
+      if (stat.size > 200 * 1024 * 1024) {
+        throw new PolicyError('El archivo supera el límite de 200 MB de esta versión.');
       }
 
       fileBuffer = fs.readFileSync(sourceFilePath);
       filename = path.basename(sourceFilePath);
       settings = body.settings || {};
-      addStep(`Loaded file from path: ${sourceFilePath} (${fileBuffer.length} bytes)`);
+      addStep(`Archivo cargado: ${sourceFilePath} (${fileBuffer.length} bytes)`);
     }
 
     const {
       password,
-      doubleFactorPassword,
-      hardwareLockEnabled,
-      metadataScrubEnabled,
-      sizeObfuscationEnabled,
-      ttlEnabled,
-      ttlValue, // in hours
-      duressEnabled,
-      duressPassword,
-      duressDecoyPath,
-      splitFragmentEnabled,
-      shredOriginalEnabled,
+      doubleFactorPassword = '',
+      hardwareLockEnabled = false,
+      metadataScrubEnabled = false,
+      sizeObfuscationEnabled = true,
+      ttlEnabled = false,
+      ttlValue,
+      duressEnabled = false,
+      duressPassword = '',
+      duressDecoyPath = '',
+      splitFragmentEnabled = false,
+      shredOriginalEnabled = false,
       shredPasses = 3,
       outputPath,
-      algorithm = 'aes-256-gcm',
+      algorithm = ALGORITHMS.CASCADE,
       steganographyEnabled = false,
       carrierPath = ''
     } = settings;
 
-    if (!password) {
-      throw new Error('Key Generation Error: Password is required');
+    // ---------------------------------------------------------------------
+    // Política de contraseñas (MIRAGE-013 parcial)
+    //
+    // El mínimo pasa de 10 a 12 caracteres y se añade una comprobación de
+    // variedad. Sigue siendo una heurística: NO mide entropía real ni detecta
+    // contraseñas filtradas. Ver README, "Limitaciones conocidas".
+    // ---------------------------------------------------------------------
+    requirePasswordPolicy(password, 'La contraseña maestra');
+    if (doubleFactorPassword) {
+      requirePasswordPolicy(doubleFactorPassword, 'El secreto secundario');
+    }
+    if (duressEnabled) {
+      if (!duressPassword) {
+        throw new PolicyError('El modo de coacción requiere una contraseña señuelo.');
+      }
+      requirePasswordPolicy(duressPassword, 'La contraseña señuelo');
     }
 
-    if (password.length < 10) {
-      throw new Error('Password Policy Error: Master password must be at least 10 characters long');
-    }
-
-    if (doubleFactorPassword && doubleFactorPassword.length < 10) {
-      throw new Error('Password Policy Error: Secondary Secret must be at least 10 characters long');
-    }
-
-    if (duressEnabled && duressPassword && duressPassword.length < 10) {
-      throw new Error('Password Policy Error: Duress Password must be at least 10 characters long');
-    }
-
-    // Step 1: Metadata Scrubbing
+    // Paso 1: limpieza de metadatos
     if (metadataScrubEnabled) {
       const ext = path.extname(filename).toLowerCase();
       const origSize = fileBuffer.length;
       if (ext === '.jpg' || ext === '.jpeg') {
         fileBuffer = scrubJpeg(fileBuffer);
-        addStep(`Metadata Scrubbed: JPEG EXIF stripped (saved ${origSize - fileBuffer.length} bytes)`);
+        addStep(`Metadatos: EXIF de JPEG eliminado (${origSize - fileBuffer.length} bytes menos)`);
       } else if (ext === '.png') {
         fileBuffer = scrubPng(fileBuffer);
-        addStep(`Metadata Scrubbed: PNG auxiliary chunks stripped (saved ${origSize - fileBuffer.length} bytes)`);
+        addStep(`Metadatos: chunks auxiliares de PNG eliminados (${origSize - fileBuffer.length} bytes menos)`);
       } else {
-        addStep(`Metadata Scrub: Skipped (File type ${ext || 'unknown'} has no EXIF container)`);
+        addStep(`Metadatos: omitido (el tipo ${ext || 'desconocido'} no tiene contenedor EXIF conocido)`);
       }
     }
 
-    // Step 2: Calculate Hash Input
+    // Paso 2: huella de entrada
     const sha3Input = crypto.createHash('sha3-256').update(fileBuffer).digest('hex');
-    addStep(`Input SHA3-256: ${sha3Input}`);
+    addStep(`SHA3-256 de entrada: ${sha3Input}`);
 
-    // Step 3: Prepare the payload envelope
+    // Paso 3: TTL
     let expirationTime = 0;
     if (ttlEnabled && ttlValue) {
-      expirationTime = Date.now() + parseFloat(ttlValue) * 60 * 60 * 1000;
-      addStep(`Time-To-Live Set: File expires on ${new Date(expirationTime).toLocaleString()}`);
-    }
-
-    let payload = serializePayload(filename, fileBuffer, expirationTime);
-
-    // Step 4: Size Obfuscation
-    if (sizeObfuscationEnabled) {
-      const prevLen = payload.length;
-      payload = applySizePadding(payload);
-      addStep(`Size Obfuscation applied: added ${payload.length - prevLen} bytes of OsRng random padding`);
-    }
-
-    // Helper function to encrypt a payload buffer
-    const encryptPayload = (payloadBuf, keyPass, dfPass, header) => {
-      const salt = crypto.randomBytes(16);
-      if (algorithm === 'mirage-c4') {
-        const ivCamellia = crypto.randomBytes(16);
-        const ivAria = crypto.randomBytes(16);
-        const ivChaCha = crypto.randomBytes(16);
-        const ivAes = crypto.randomBytes(12);
-        const ivs = { ivCamellia, ivAria, ivChaCha, ivAes };
-        const key128Bytes = deriveKey(keyPass, salt, hardwareLockEnabled, dfPass, 128);
-        const { ciphertext, tag } = encryptMirageC4(payloadBuf, key128Bytes, ivs, header, salt);
-        return { salt, ivs, tag, ciphertext };
-      } else {
-        const iv = crypto.randomBytes(12);
-        const key = deriveKey(keyPass, salt, hardwareLockEnabled, dfPass, 32);
-        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-        if (header) {
-          cipher.setAAD(header);
-        }
-        
-        const ciphertext = Buffer.concat([cipher.update(payloadBuf), cipher.final()]);
-        const tag = cipher.getAuthTag();
-
-        return { salt, iv, tag, ciphertext };
+      const hours = parseFloat(ttlValue);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        throw new PolicyError('El valor de caducidad (TTL) debe ser un número de horas positivo.');
       }
-    };
+      expirationTime = Date.now() + hours * 3600 * 1000;
+      addStep(`Caducidad fijada: ${new Date(expirationTime).toISOString()}`);
+      addStep(
+        'Aviso: el TTL es una política que aplica ESTA aplicación al abrir el archivo. '
+        + 'No es un control criptográfico: quien tenga la contraseña puede recuperar los datos '
+        + 'con otro programa, y la fecha del sistema se puede cambiar.',
+        true
+      );
+    }
 
-    // Step 5: Core Encryption
-    let outputBuffer;
-    
+    const payload = serializePayload(filename, fileBuffer, expirationTime);
+
+    // Paso 4: señuelo del modo de coacción
+    let decoyPayload = null;
     if (duressEnabled) {
-      addStep('Duress Mode active: Preparing secondary decoy block');
-      if (!duressPassword) {
-        throw new Error('Duress Mode Error: Decoy password required');
-      }
-      const hashedDuress = crypto.createHash('sha256').update(duressPassword).digest();
-      const hashedPassword = crypto.createHash('sha256').update(password).digest();
-      if (crypto.timingSafeEqual(hashedDuress, hashedPassword)) {
-        throw new Error('Duress Mode Error: Decoy password must be different from primary password');
-      }
-
-      let decoyBuffer;
+      addStep('Modo de coacción activo: preparando bloque señuelo');
+      let decoyBuffer = null;
       let decoyFilename = 'decoy.txt';
 
       if (duressDecoyPath) {
-        let resolvedDecoyPath = duressDecoyPath;
-        if (resolvedDecoyPath.startsWith('~')) {
-          resolvedDecoyPath = path.join(os.homedir(), resolvedDecoyPath.slice(1));
-        }
-        if (fs.existsSync(resolvedDecoyPath)) {
-          decoyBuffer = fs.readFileSync(resolvedDecoyPath);
-          decoyFilename = path.basename(resolvedDecoyPath);
-          addStep(`Duress Decoy Loaded: ${resolvedDecoyPath} (${decoyBuffer.length} bytes)`);
+        const resolvedDecoy = resolveUserPath(duressDecoyPath, 'archivo señuelo');
+        if (fs.existsSync(resolvedDecoy) && fs.statSync(resolvedDecoy).isFile()) {
+          if (fs.statSync(resolvedDecoy).size > 50 * 1024 * 1024) {
+            throw new PolicyError('El archivo señuelo supera el límite de 50 MB.');
+          }
+          decoyBuffer = fs.readFileSync(resolvedDecoy);
+          decoyFilename = path.basename(resolvedDecoy);
+          addStep(`Señuelo cargado: ${resolvedDecoy} (${decoyBuffer.length} bytes)`);
+        } else {
+          throw new PolicyError(`No se encuentra el archivo señuelo: ${resolvedDecoy}`);
         }
       }
 
       if (!decoyBuffer) {
-        decoyBuffer = Buffer.from('WARNING: System compromised. Access Restricted.', 'utf8');
-        addStep('Duress Decoy: Using default warning file payload');
+        decoyBuffer = Buffer.from(
+          'Este documento no contiene informacion relevante.\r\n',
+          'utf8'
+        );
+        addStep('Señuelo: usando el contenido por defecto');
       }
-
-      const decoyPayload = serializePayload(decoyFilename, decoyBuffer, 0); // No TTL on decoy usually
-      
-      if (algorithm === 'mirage-c4') {
-        const header = Buffer.from('MIRAGE\x01\x04', 'binary');
-        const block1 = encryptPayload(payload, password, doubleFactorPassword, header);
-        const block2 = encryptPayload(decoyPayload, duressPassword, '', header);
-        
-        const block1LenBuf = Buffer.alloc(8);
-        block1LenBuf.writeDoubleBE(block1.ciphertext.length, 0);
-        const block2LenBuf = Buffer.alloc(8);
-        block2LenBuf.writeDoubleBE(block2.ciphertext.length, 0);
-
-        outputBuffer = Buffer.concat([
-          header,
-          block1.salt, block1.ivs.ivCamellia, block1.ivs.ivAria, block1.ivs.ivChaCha, block1.ivs.ivAes, block1.tag, block1LenBuf, block1.ciphertext,
-          block2.salt, block2.ivs.ivCamellia, block2.ivs.ivAria, block2.ivs.ivChaCha, block2.ivs.ivAes, block2.tag, block2LenBuf, block2.ciphertext
-        ]);
-        addStep('Mirage-C4 (4x256-bit Cascade) Dual-Block Envelope constructed');
-      } else {
-        const header = Buffer.from('MIRAGE\x01\x02', 'binary');
-        const block1 = encryptPayload(payload, password, doubleFactorPassword, header);
-        const block2 = encryptPayload(decoyPayload, duressPassword, '', header);
-        
-        const block1LenBuf = Buffer.alloc(8);
-        block1LenBuf.writeDoubleBE(block1.ciphertext.length, 0);
-        const block2LenBuf = Buffer.alloc(8);
-        block2LenBuf.writeDoubleBE(block2.ciphertext.length, 0);
-
-        outputBuffer = Buffer.concat([
-          header,
-          block1.salt, block1.iv, block1.tag, block1LenBuf, block1.ciphertext,
-          block2.salt, block2.iv, block2.tag, block2LenBuf, block2.ciphertext
-        ]);
-        addStep('AES-256-GCM Dual-Block Envelope constructed');
-      }
-    } else {
-      if (algorithm === 'mirage-c4') {
-        // Mirage-C4 Single Block (Mode 0x03)
-        const header = Buffer.from('MIRAGE\x01\x03', 'binary');
-        const block = encryptPayload(payload, password, doubleFactorPassword, header);
-        
-        const cipherLenBuf = Buffer.alloc(8);
-        cipherLenBuf.writeDoubleBE(block.ciphertext.length, 0);
-
-        outputBuffer = Buffer.concat([
-          header,
-          block.salt,
-          block.ivs.ivCamellia,
-          block.ivs.ivAria,
-          block.ivs.ivChaCha,
-          block.ivs.ivAes,
-          block.tag,
-          cipherLenBuf,
-          block.ciphertext
-        ]);
-        addStep('Mirage-C4 (4x256-bit Cascade) Single-Block Envelope constructed');
-      } else {
-        // Standard Single Block (Mode 0x01)
-        const header = Buffer.from('MIRAGE\x01\x01', 'binary');
-        const block = encryptPayload(payload, password, doubleFactorPassword, header);
-        
-        const cipherLenBuf = Buffer.alloc(8);
-        cipherLenBuf.writeDoubleBE(block.ciphertext.length, 0);
-
-        outputBuffer = Buffer.concat([
-          header,
-          block.salt, block.iv, block.tag, cipherLenBuf, block.ciphertext
-        ]);
-        addStep('AES-256-GCM Single-Block Envelope constructed');
-      }
+      decoyPayload = serializePayload(decoyFilename, decoyBuffer, 0);
     }
 
-    // Step 6: Output / Splitting
-    let targetOutputPath = outputPath;
-    const ext = splitFragmentEnabled ? '.part' : (steganographyEnabled ? (carrierPath ? path.extname(carrierPath) : '.png') : '.wraith');
+    // Paso 5: cifrado
+    //
+    // MIRAGE-004: el estado del bloqueo por hardware queda registrado en la
+    // cabecera y se aplica a AMBOS bloques. En la versión anterior el señuelo
+    // se cifraba siempre sin hardware pero al descifrar solo se probaba con
+    // hardware desactivado, de modo que el modo de coacción era inservible en
+    // cuanto se activaba el bloqueo por hardware.
+    const hardwareId = getHardwareIdIfEnabled(hardwareLockEnabled);
+
+    const { envelope, flags } = encryptVault({
+      payload,
+      decoyPayload,
+      password,
+      secondFactor: doubleFactorPassword,
+      duressPassword: duressEnabled ? duressPassword : '',
+      hardwareId,
+      algorithm,
+      bucketPadding: sizeObfuscationEnabled,
+    });
+
+    if (algorithm === ALGORITHMS.CASCADE) {
+      addStep('Cascada Mirage-C4 v2: Camellia-256-CBC → ChaCha20 → ARIA-256-CBC → AES-256-GCM');
+      addStep(
+        'Aviso: la cascada aporta defensa en profundidad, NO multiplica el tamaño de clave. '
+        + 'La seguridad sigue siendo del orden de 256 bits, no de 1024.',
+        true
+      );
+    } else {
+      addStep('AES-256-GCM con AAD reforzado (cabecera, salt, IVs, índice de bloque y longitud)');
+    }
+    if (sizeObfuscationEnabled) {
+      addStep(`Ocultación de tamaño (Padmé): archivo final de ${envelope.length} bytes`);
+    }
+    addStep(`Envelope v2 construido (flags 0x${flags.toString(16).padStart(2, '0')})`);
+
+    // Paso 6: destino
+    let outputBuffer = envelope;
+    const ext = splitFragmentEnabled
+      ? '.share'
+      : (steganographyEnabled ? (carrierPath ? path.extname(carrierPath) || '.png' : '.png') : '.wraith');
     const defaultName = path.basename(filename, path.extname(filename)) + ext;
 
-    if (!targetOutputPath) {
+    let targetOutputPath;
+    if (!outputPath) {
       const parent = sourceFilePath ? path.dirname(sourceFilePath) : os.homedir();
       targetOutputPath = path.join(parent, defaultName);
     } else {
-      if (targetOutputPath.startsWith('~')) {
-        targetOutputPath = path.join(os.homedir(), targetOutputPath.slice(1));
-      }
-      
-      // Check if targetOutputPath is a directory
+      targetOutputPath = resolveUserPath(outputPath, 'ruta de salida');
       let isDir = false;
       try {
-        if (fs.existsSync(targetOutputPath) && fs.lstatSync(targetOutputPath).isDirectory()) {
-          isDir = true;
-        }
-      } catch (e) {}
-      
-      if (isDir || targetOutputPath.endsWith('/') || targetOutputPath.endsWith('\\')) {
+        isDir = fs.existsSync(targetOutputPath) && fs.lstatSync(targetOutputPath).isDirectory();
+      } catch { /* si no se puede comprobar, lo tratamos como archivo */ }
+      if (isDir || outputPath.endsWith('/') || outputPath.endsWith('\\')) {
         targetOutputPath = path.join(targetOutputPath, defaultName);
       }
     }
 
-    // Ensure output directories exist
     fs.mkdirSync(path.dirname(targetOutputPath), { recursive: true });
 
     if (steganographyEnabled) {
       outputBuffer = applySteganography(carrierPath, outputBuffer, addStep);
     }
 
+    // Paso 7: fragmentación
+    //
+    // MIRAGE-009: la versión anterior anunciaba un umbral "2 de 3" pero hacía
+    // H1 = primera mitad, H2 = segunda mitad, H3 = H1 XOR H2. Eso es paridad
+    // tipo RAID-5, no un esquema de umbral: el fragmento 1 contenía en claro la
+    // cabecera MIRAGE, el salt y todos los IVs, y era literalmente la primera
+    // mitad del archivo cifrado.
+    //
+    // Ahora se usa Shamir sobre GF(2^8): un fragmento aislado es
+    // indistinguible de datos aleatorios (secreto en sentido teórico de la
+    // información) y cada fragmento lleva su propio HMAC-SHA256.
     if (splitFragmentEnabled) {
-      addStep('Split Fragment mode active: Dividing cipher file into 3 parts (2-of-3 threshold)');
-      // Split the output ciphertext envelope (outputBuffer) into 2 halves + 1 XOR parity
-      const fullLen = outputBuffer.length;
-      const halfLen = Math.ceil(fullLen / 2);
-      
-      // Make outputBuffer even length by padding if needed
-      let paddedOutput = outputBuffer;
-      if (fullLen % 2 !== 0) {
-        paddedOutput = Buffer.concat([outputBuffer, crypto.randomBytes(1)]);
-      }
-      
-      const H1 = paddedOutput.subarray(0, halfLen);
-      const H2 = paddedOutput.subarray(halfLen);
-      const H3 = Buffer.alloc(halfLen);
-      
-      for (let i = 0; i < halfLen; i++) {
-        H3[i] = H1[i] ^ H2[i];
+      addStep('Fragmentación con umbral real 2-de-3 (Shamir sobre GF(2^8))');
+      const shares = splitSecret(outputBuffer, 2, 3);
+      const written = [];
+      shares.forEach((share, i) => {
+        const sharePath = `${targetOutputPath}${i + 1}`;
+        fs.writeFileSync(sharePath, share);
+        written.push(sharePath);
+        addStep(`Fragmento ${i + 1} guardado en ${sharePath} (${share.length} bytes)`);
+      });
+      addStep('Cada fragmento aislado no revela nada del contenido ni del formato.');
+
+      const finalSha3 = crypto.createHash('sha3-256').update(outputBuffer).digest('hex');
+      if (shredOriginalEnabled && sourceFilePath) {
+        addStep(`Borrado seguro: sobrescribiendo ${sourceFilePath} en ${shredPasses} pasadas...`);
+        secureShred(sourceFilePath, parseInt(shredPasses, 10));
+        addStep(shredWarning());
       }
 
-      // Write parts
-      const writePart = (partIdx, partBuffer) => {
-        const partMagic = Buffer.from('MIRAGE_PART\x01', 'binary');
-        const partIdxBuf = Buffer.from([partIdx]);
-        
-        const origLenBuf = Buffer.alloc(8);
-        origLenBuf.writeDoubleBE(fullLen, 0);
-        
-        const partContent = Buffer.concat([
-          partMagic,
-          partIdxBuf,
-          origLenBuf,
-          partBuffer
-        ]);
-        
-        const partPath = targetOutputPath + partIdx;
-        fs.writeFileSync(partPath, partContent);
-        addStep(`Saved Fragment ${partIdx} to: ${partPath}`);
-      };
-
-      writePart(1, H1);
-      writePart(2, H2);
-      writePart(3, H3);
-    } else {
-      fs.writeFileSync(targetOutputPath, outputBuffer);
-      addStep(`Saved Encrypted File to: ${targetOutputPath}`);
+      recordAuthSuccess();
+      return res.json({
+        success: true,
+        outputPath: written.join(', '),
+        sharePaths: written,
+        inputHash: sha3Input,
+        outputHash: finalSha3,
+        steps,
+      });
     }
 
-    // Calculate Hash Output
+    fs.writeFileSync(targetOutputPath, outputBuffer);
+    addStep(`Archivo cifrado guardado en ${targetOutputPath}`);
+
     const finalSha3 = crypto.createHash('sha3-256').update(outputBuffer).digest('hex');
-    addStep(`Output SHA3-256 (.wraith): ${finalSha3}`);
+    addStep(`SHA3-256 de salida: ${finalSha3}`);
 
-    // Step 7: Secure Shredding of original file
+    // Paso 8: borrado seguro del original
     if (shredOriginalEnabled && sourceFilePath) {
-      addStep(`Secure Shredder active: Overwriting file ${sourceFilePath} in ${shredPasses} passes...`);
-      secureShred(sourceFilePath, parseInt(shredPasses));
-      addStep(`Original File wiped securely from disk.`);
-      
-      // If duress file was local and shredded
-      if (duressEnabled && duressDecoyPath && duressDecoyPath !== sourceFilePath) {
-        // We typically do NOT shred the decoy unless specified. Let's keep it safe.
-      }
+      addStep(`Borrado seguro: sobrescribiendo ${sourceFilePath} en ${shredPasses} pasadas...`);
+      secureShred(sourceFilePath, parseInt(shredPasses, 10));
+      addStep(shredWarning());
     }
 
+    recordAuthSuccess();
     res.json({
       success: true,
-      outputPath: splitFragmentEnabled ? `${targetOutputPath}1, 2, 3` : targetOutputPath,
+      outputPath: targetOutputPath,
       inputHash: sha3Input,
       outputHash: finalSha3,
-      steps
+      steps,
     });
 
   } catch (err) {
-    addStep(err.message, false);
-    res.status(500).json({
+    const pub = toPublicError(err);
+    if (pub.internal) console.error(`[Encrypt] detalle interno: ${pub.internal}`);
+    addStep(pub.message, false);
+    res.status(pub.status).json({
       success: false,
-      error: err.message,
-      steps
+      error: pub.message,
+      steps: sanitizeSteps(steps, false),
     });
+  } finally {
+    releaseKdfSlot();
   }
 });
+
+/**
+ * Aviso que acompaña siempre al borrado seguro (MIRAGE-014).
+ *
+ * Sobrescribir un archivo con datos aleatorios NO garantiza la destrucción del
+ * contenido en almacenamiento moderno: SSD con wear leveling, sistemas de
+ * archivos copy-on-write (Btrfs, ZFS, APFS), snapshots, journaling y copias de
+ * seguridad pueden conservar los bloques originales. La aplicación no puede
+ * saber si eso ocurre, así que lo declara en lugar de prometer lo contrario.
+ */
+function shredWarning() {
+  return 'Original sobrescrito. AVISO: en SSD, sistemas copy-on-write (Btrfs, ZFS, APFS), '
+    + 'con snapshots, journaling o copias de seguridad activas, sobrescribir NO garantiza que '
+    + 'los datos hayan desaparecido del medio físico. Para garantías reales: cifrado de disco '
+    + 'completo desde el principio, o destrucción física del soporte.';
+}
 
 // Decrypt & Restore API
 app.post('/api/decrypt', async (req, res) => {
@@ -974,356 +1075,900 @@ app.post('/api/decrypt', async (req, res) => {
     console.log(`[Decrypt] ${msg}`);
   };
 
+  // MIRAGE-013: retardo creciente tras fallos + límite de concurrencia.
+  await sleep(currentBackoffMs());
+  await acquireKdfSlot();
   try {
-    const { filePath, partPaths, password, doubleFactorPassword, restorePath } = req.body;
+    const { filePath, partPaths, sharePaths, password, doubleFactorPassword = '', restorePath } = req.body || {};
     let encryptedBuffer;
-    
+
     if (!password) {
-      throw new Error('Key Verification Error: Password is required');
+      throw new PolicyError('Se requiere la contraseña.');
     }
 
-    // Handle Split Fragment Mode reconstruction
-    if (partPaths && partPaths.length > 0) {
-      addStep(`Split Recombination: Reading ${partPaths.length} fragments...`);
-      if (partPaths.length < 2) {
-        throw new Error('Fragment Error: At least 2 split parts are required to recover the file');
+    // -----------------------------------------------------------------------
+    // Recomposición de fragmentos
+    //
+    // MIRAGE-009: los fragmentos ya son fragmentos de Shamir con HMAC propio.
+    // combineShares valida el magic, la versión, el umbral, la longitud, los
+    // índices duplicados y el HMAC del secreto reconstruido. Un fragmento
+    // manipulado o de otro conjunto se detecta antes de intentar descifrar.
+    // -----------------------------------------------------------------------
+    const fragmentPaths = sharePaths || partPaths;
+    if (fragmentPaths && fragmentPaths.length > 0) {
+      addStep(`Recomposición: leyendo ${fragmentPaths.length} fragmentos...`);
+      if (fragmentPaths.length < 2) {
+        throw new PolicyError('Se necesitan al menos 2 fragmentos para recuperar el archivo.');
       }
-
-      // Load parts
-      const parts = [];
-      for (const pPath of partPaths) {
-        let resolvedPath = pPath;
-        if (resolvedPath.startsWith('~')) {
-          resolvedPath = path.join(os.homedir(), resolvedPath.slice(1));
+      const shares = [];
+      for (const p of fragmentPaths) {
+        const resolved = resolveUserPath(p, 'fragmento');
+        if (!fs.existsSync(resolved)) {
+          throw new PolicyError(`No se encuentra el fragmento: ${resolved}`);
         }
-        if (!fs.existsSync(resolvedPath)) {
-          throw new Error(`Fragment file not found: ${resolvedPath}`);
-        }
-        const partBuffer = fs.readFileSync(resolvedPath);
-        
-        // Parse part header
-        const magic = partBuffer.subarray(0, 12).toString('binary');
-        if (magic !== 'MIRAGE_PART\x01') {
-          throw new Error(`File is not a valid Project Mirage fragment: ${resolvedPath}`);
-        }
-        
-        const index = partBuffer[12];
-        const originalLength = partBuffer.readDoubleBE(13);
-        const data = partBuffer.subarray(21);
-        
-        parts.push({ index, originalLength, data, path: resolvedPath });
-        addStep(`Loaded Fragment Index ${index} (${data.length} bytes) from ${path.basename(resolvedPath)}`);
+        shares.push(fs.readFileSync(resolved));
+        addStep(`Fragmento leído: ${path.basename(resolved)}`);
       }
-
-      // Check lengths and matching files
-      const expectedLen = parts[0].originalLength;
-      const chunkLen = parts[0].data.length;
-      
-      for (const part of parts) {
-        if (part.originalLength !== expectedLen || part.data.length !== chunkLen) {
-          throw new Error('Fragment Error: Selected parts do not belong to the same split set');
-        }
-      }
-
-      // Reconstruct ciphertext halves
-      let H1, H2;
-      const hasPart1 = parts.find(p => p.index === 1);
-      const hasPart2 = parts.find(p => p.index === 2);
-      const hasPart3 = parts.find(p => p.index === 3);
-
-      if (hasPart1 && hasPart2) {
-        addStep('Combining Fragment 1 and Fragment 2 directly');
-        H1 = hasPart1.data;
-        H2 = hasPart2.data;
-      } else if (hasPart1 && hasPart3) {
-        addStep('Reconstructing Fragment 2 using Fragment 1 XOR Fragment 3');
-        H1 = hasPart1.data;
-        H2 = Buffer.alloc(chunkLen);
-        for (let i = 0; i < chunkLen; i++) {
-          H2[i] = H1[i] ^ hasPart3.data[i];
-        }
-      } else if (hasPart2 && hasPart3) {
-        addStep('Reconstructing Fragment 1 using Fragment 2 XOR Fragment 3');
-        H2 = hasPart2.data;
-        H1 = Buffer.alloc(chunkLen);
-        for (let i = 0; i < chunkLen; i++) {
-          H1[i] = H2[i] ^ hasPart3.data[i];
-        }
-      } else {
-        throw new Error('Fragment Error: Invalid part combination indices');
-      }
-
-      const combined = Buffer.concat([H1, H2]);
-      // Trim to original length
-      encryptedBuffer = combined.subarray(0, expectedLen);
-      addStep(`Ciphertext envelope successfully reconstructed (${encryptedBuffer.length} bytes)`);
-
+      encryptedBuffer = combineShares(shares);
+      addStep(`Envelope reconstruido y verificado por HMAC (${encryptedBuffer.length} bytes)`);
     } else {
-      // Standard single file load
-      let resolvedPath = filePath;
-      if (!resolvedPath) {
-        throw new Error('No encrypted file path provided');
+      if (!filePath) {
+        throw new PolicyError('No se ha indicado la ruta del archivo cifrado.');
       }
-      if (resolvedPath.startsWith('~')) {
-        resolvedPath = path.join(os.homedir(), resolvedPath.slice(1));
+      const resolved = resolveUserPath(filePath, 'archivo cifrado');
+      if (!fs.existsSync(resolved)) {
+        throw new PolicyError(`No se encuentra el archivo: ${resolved}`);
       }
-      if (!fs.existsSync(resolvedPath)) {
-        throw new Error(`File not found: ${resolvedPath}`);
-      }
-
-      encryptedBuffer = fs.readFileSync(resolvedPath);
-      addStep(`Loaded file: ${resolvedPath} (${encryptedBuffer.length} bytes)`);
+      encryptedBuffer = fs.readFileSync(resolved);
+      addStep(`Archivo cargado: ${resolved} (${encryptedBuffer.length} bytes)`);
     }
 
-    // Step 1b: Carrier Appending check and extraction
+    // -----------------------------------------------------------------------
+    // Extracción del portador (si lo hay)
+    //
+    // MIRAGE-003: la longitud del trailer se valida antes de cortar. La versión
+    // anterior aceptaba cualquier uint32, produciendo offsets negativos que
+    // subarray silenciaba devolviendo un búfer arbitrario.
+    // -----------------------------------------------------------------------
     let isSteg = false;
-    if (encryptedBuffer.length >= 12) {
-      const signature = encryptedBuffer.subarray(-8).toString('ascii');
-      if (signature === 'MIRGSTEG') {
+    const v2Extract = extractFromCarrier(encryptedBuffer);
+    if (v2Extract.isSteg) {
+      encryptedBuffer = v2Extract.buffer;
+      isSteg = true;
+      addStep(`Trailer de portador v2 verificado (${encryptedBuffer.length} bytes de carga)`);
+    } else {
+      const v1Extract = stripLegacySteg(encryptedBuffer);
+      if (v1Extract.isSteg) {
+        encryptedBuffer = v1Extract.buffer;
         isSteg = true;
-        const payloadLen = encryptedBuffer.readUInt32BE(encryptedBuffer.length - 12);
-        addStep(`Carrier Appending signature verified: extracting trailing payload (${payloadLen} bytes)`);
-        encryptedBuffer = encryptedBuffer.subarray(
-          encryptedBuffer.length - 12 - payloadLen,
-          encryptedBuffer.length - 12
+        addStep(`Trailer de portador v1 verificado (${encryptedBuffer.length} bytes de carga)`);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Ruta v1 (solo lectura) o ruta v2
+    // -----------------------------------------------------------------------
+    let payloadBuffer;
+    let isDuress = false;
+    let hardwareLockUsed = false;
+    let algorithmUsed;
+    let legacy = false;
+    let expirationTime = 0;
+
+    if (isLegacyV1(encryptedBuffer)) {
+      legacy = true;
+      addStep('Formato v1 detectado: se usa el lector heredado de solo lectura.');
+      // En v1 el estado del hardware-lock no está en el archivo, así que hay
+      // que probar los dos. Es la limitación que MIRAGE-013 corrige en v2.
+      const hwId = (() => { try { return getHardwareUUID() || ''; } catch { return ''; } })();
+      const r = decryptLegacyV1(encryptedBuffer, {
+        password, secondFactor: doubleFactorPassword, hardwareId: hwId,
+      });
+      isDuress = r.isDuress;
+      hardwareLockUsed = r.hardwareLockUsed;
+      algorithmUsed = (r.mode === 0x03 || r.mode === 0x04) ? 'mirage-c4 (v1)' : 'aes-256-gcm (v1)';
+      const parsed = deserializePayloadV1(r.payload);
+      expirationTime = parsed.expirationTime;
+      payloadBuffer = null;
+
+      addStep(migrateNotice, true);
+
+      // MIRAGE-010: TTL antes de escribir nada.
+      if (expirationTime > 0 && Date.now() > expirationTime) {
+        throw new PolicyError(
+          `El archivo declara haber caducado el ${new Date(expirationTime).toISOString()}. `
+          + 'Aviso: el TTL es una política de esta aplicación, no un control criptográfico.'
         );
       }
+
+      const restored = writeRestoredFile({
+        restorePath, sourcePath: filePath,
+        filename: parsed.filename, data: parsed.fileData, addStep,
+      });
+      recordAuthSuccess();
+      return res.json({
+        success: true,
+        legacyFormat: 'v1',
+        migrationRequired: true,
+        migrationNotice: migrateNotice,
+        restorePath: restored.path,
+        filename: restored.filename,
+        fileSize: parsed.fileData.length,
+        outputHash: restored.hash,
+        hardwareLockVerified: hardwareLockUsed,
+        duressTriggered: isDuress,
+        algorithm: algorithmUsed,
+        steganography: isSteg,
+        steps,
+      });
     }
 
-    // Step 2: Validate magic header
-    const fileMagic = encryptedBuffer.subarray(0, 8).toString('binary');
-    if (fileMagic.substring(0, 6) !== 'MIRAGE') {
-      throw new Error('Header Error: File is not a valid Project Mirage archive');
+    // Ruta v2
+    const hwId = (() => { try { return getHardwareUUID() || ''; } catch { return ''; } })();
+    const result = decryptVault(encryptedBuffer, {
+      password,
+      secondFactor: doubleFactorPassword,
+      hardwareId: hwId,
+    });
+    payloadBuffer = result.payload;
+    isDuress = result.isDuress;
+    hardwareLockUsed = result.hardwareLockUsed;
+    algorithmUsed = result.algorithm;
+    expirationTime = result.expirationTime;
+
+    addStep(`Autenticación correcta (${algorithmUsed}${hardwareLockUsed ? ', vinculado a este equipo' : ''})`);
+    if (isDuress) {
+      addStep('Se ha abierto el bloque SEÑUELO (contraseña de coacción).', true);
     }
 
-    const version = encryptedBuffer[6];
-    const mode = encryptedBuffer[7];
+    // Bóveda multi-archivo
+    if (isMultiPayload(payloadBuffer)) {
+      const vault = deserializeMultiPayload(payloadBuffer);
+      addStep(`Bóveda con ${vault.files.length} archivos`);
+      const baseDir = restorePath
+        ? resolveUserPath(restorePath, 'carpeta de restauración')
+        : path.join(os.homedir(), 'MirageRestored');
+      fs.mkdirSync(baseDir, { recursive: true });
 
-    if (version !== 1) {
-      throw new Error(`Header Error: Unsupported version (${version})`);
+      const written = [];
+      for (const f of vault.files) {
+        // MIRAGE-001: safeJoin garantiza que la ruta del payload no escape.
+        const dest = safeJoin(baseDir, f.relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, f.content);
+        written.push(dest);
+      }
+      addStep(`${written.length} archivos restaurados bajo ${baseDir}`);
+      recordAuthSuccess();
+      return res.json({
+        success: true,
+        restorePath: baseDir,
+        restoredFiles: written,
+        fileCount: written.length,
+        hardwareLockVerified: hardwareLockUsed,
+        duressTriggered: isDuress,
+        algorithm: algorithmUsed,
+        steganography: isSteg,
+        steps,
+      });
     }
 
-    let payloadBuffer = null;
-    let hardwareLockEnabled = false;
-    const header = encryptedBuffer.subarray(0, 8);
-
-    // Helper decrypt block function
-    const decryptBlock = (salt, iv, tag, ciphertext, isHwLock, headerBuf) => {
-      try {
-        const key = deriveKey(password, salt, isHwLock, doubleFactorPassword, 32);
-        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-        decipher.setAuthTag(tag);
-        if (headerBuf) {
-          decipher.setAAD(headerBuf);
-        }
-        return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-      } catch (e) {
-        return null;
-      }
-    };
-
-    const decryptBlockC4 = (salt, ivs, tag, ciphertext, isHwLock, headerBuf) => {
-      try {
-        const key128Bytes = deriveKey(password, salt, isHwLock, doubleFactorPassword, 128);
-        return decryptMirageC4(ciphertext, key128Bytes, ivs, tag, headerBuf, salt);
-      } catch (e) {
-        return null;
-      }
-    };
-
-    if (mode === 0x01) {
-      addStep('Parsing Single-Block Archive');
-      const salt = encryptedBuffer.subarray(8, 24);
-      const iv = encryptedBuffer.subarray(24, 36);
-      const tag = encryptedBuffer.subarray(36, 52);
-      const cipherLen = encryptedBuffer.readDoubleBE(52);
-      const ciphertext = encryptedBuffer.subarray(60, 60 + cipherLen);
-
-      // Try decrypting with hardware lock (both states to see which works)
-      payloadBuffer = decryptBlock(salt, iv, tag, ciphertext, true, header);
-      if (payloadBuffer) {
-        hardwareLockEnabled = true;
-        addStep('AES-256-GCM authentication successful (Hardware lock verified)');
-      } else {
-        payloadBuffer = decryptBlock(salt, iv, tag, ciphertext, false, header);
-        if (payloadBuffer) {
-          addStep('AES-256-GCM authentication successful');
-        }
-      }
-
-    } else if (mode === 0x02) {
-      addStep('Parsing Dual-Block (Duress Mode) Archive');
-      // Read Block 1
-      let offset = 8;
-      const b1Salt = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const b1Iv = encryptedBuffer.subarray(offset, offset + 12); offset += 12;
-      const b1Tag = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const b1Len = encryptedBuffer.readDoubleBE(offset); offset += 8;
-      const b1Ciphertext = encryptedBuffer.subarray(offset, offset + b1Len); offset += b1Len;
-
-      // Read Block 2
-      const b2Salt = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const b2Iv = encryptedBuffer.subarray(offset, offset + 12); offset += 12;
-      const b2Tag = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const b2Len = encryptedBuffer.readDoubleBE(offset); offset += 8;
-      const b2Ciphertext = encryptedBuffer.subarray(offset, offset + b2Len);
-
-      // Try Decrypting Block 1 (Real block)
-      addStep('Testing decryption key against Primary Block...');
-      payloadBuffer = decryptBlock(b1Salt, b1Iv, b1Tag, b1Ciphertext, true, header);
-      if (payloadBuffer) {
-        hardwareLockEnabled = true;
-        addStep('Authenticated Primary Block successfully (Hardware Lock verified)');
-      } else {
-        payloadBuffer = decryptBlock(b1Salt, b1Iv, b1Tag, b1Ciphertext, false, header);
-        if (payloadBuffer) {
-          addStep('Authenticated Primary Block successfully');
-        }
-      }
-
-      // If Block 1 failed, test Block 2 (Decoy block, standard encryption)
-      if (!payloadBuffer) {
-        addStep('Primary Block auth failed. Testing key against Decoy Block (Duress Trigger)...');
-        payloadBuffer = decryptBlock(b2Salt, b2Iv, b2Tag, b2Ciphertext, false, header);
-        if (payloadBuffer) {
-          addStep('⚠️ DURESS TRIGGERED: Decoy block successfully authenticated');
-        }
-      }
-    } else if (mode === 0x03) {
-      addStep('Parsing Mirage-C4 Single-Block Archive');
-      let offset = 8;
-      const salt = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const ivCamellia = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const ivAria = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const ivChaCha = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const ivAes = encryptedBuffer.subarray(offset, offset + 12); offset += 12;
-      const tag = encryptedBuffer.subarray(offset, offset + 16); offset += 16;
-      const cipherLen = encryptedBuffer.readDoubleBE(offset); offset += 8;
-      const ciphertext = encryptedBuffer.subarray(offset, offset + cipherLen);
-
-      const ivs = { ivCamellia, ivAria, ivChaCha, ivAes };
-
-      // Try decrypting with hardware lock
-      payloadBuffer = decryptBlockC4(salt, ivs, tag, ciphertext, true, header);
-      if (payloadBuffer) {
-        hardwareLockEnabled = true;
-        addStep('Mirage-C4 authentication successful (Hardware lock verified)');
-      } else {
-        payloadBuffer = decryptBlockC4(salt, ivs, tag, ciphertext, false, header);
-        if (payloadBuffer) {
-          addStep('Mirage-C4 authentication successful');
-        }
-      }
-
-    } else if (mode === 0x04) {
-      addStep('Parsing Mirage-C4 Dual-Block (Duress Mode) Archive');
-      const parseC4Block = (buf, startOffset) => {
-        let offset = startOffset;
-        const salt = buf.subarray(offset, offset + 16); offset += 16;
-        const ivCamellia = buf.subarray(offset, offset + 16); offset += 16;
-        const ivAria = buf.subarray(offset, offset + 16); offset += 16;
-        const ivChaCha = buf.subarray(offset, offset + 16); offset += 16;
-        const ivAes = buf.subarray(offset, offset + 12); offset += 12;
-        const tag = buf.subarray(offset, offset + 16); offset += 16;
-        const len = buf.readDoubleBE(offset); offset += 8;
-        const ciphertext = buf.subarray(offset, offset + len);
-        return {
-          salt,
-          ivs: { ivCamellia, ivAria, ivChaCha, ivAes },
-          tag,
-          ciphertext,
-          nextOffset: offset + len
-        };
-      };
-
-      const block1 = parseC4Block(encryptedBuffer, 8);
-      const block2 = parseC4Block(encryptedBuffer, block1.nextOffset);
-
-      // Decrypt Block 1 (Primary payload)
-      addStep('Testing decryption key against Primary Block...');
-      payloadBuffer = decryptBlockC4(block1.salt, block1.ivs, block1.tag, block1.ciphertext, true, header);
-      if (payloadBuffer) {
-        hardwareLockEnabled = true;
-        addStep('Authenticated Primary Block successfully (Hardware Lock verified)');
-      } else {
-        payloadBuffer = decryptBlockC4(block1.salt, block1.ivs, block1.tag, block1.ciphertext, false, header);
-        if (payloadBuffer) {
-          addStep('Authenticated Primary Block successfully');
-        }
-      }
-
-      // If Block 1 failed, test Block 2 (Decoy payload)
-      if (!payloadBuffer) {
-        addStep('Primary Block auth failed. Testing key against Decoy Block (Duress Trigger)...');
-        payloadBuffer = decryptBlockC4(block2.salt, block2.ivs, block2.tag, block2.ciphertext, false, header);
-        if (payloadBuffer) {
-          addStep('⚠️ DURESS TRIGGERED: Decoy block successfully authenticated');
-        }
-      }
-    } else {
-      throw new Error(`Header Error: Unsupported encryption mode code (${mode})`);
-    }
-
-    if (!payloadBuffer) {
-      throw new Error('Authentication Failure: Invalid password or integrity compromised');
-    }
-
-    // Step 4: Deserialize Payload
-    const { filename, fileData, expirationTime } = deserializePayload(payloadBuffer);
-    
-    // Check if expired
+    // Archivo único
+    const parsed = deserializePayload(payloadBuffer);
     if (expirationTime > 0) {
-      if (Date.now() > expirationTime) {
-        throw new Error(`Integrity Violation: File has expired (Expired on ${new Date(expirationTime).toLocaleString()})`);
-      } else {
-        addStep(`TTL Check Passed: File is valid until ${new Date(expirationTime).toLocaleString()}`);
-      }
+      addStep(`Caducidad válida hasta ${new Date(expirationTime).toISOString()}`);
     }
 
-    // Step 5: Save File
-    let targetRestorePath = restorePath;
-    if (!targetRestorePath) {
-      // Default to user's Downloads or same dir as source
-      const parent = filePath ? path.dirname(filePath) : os.homedir();
-      targetRestorePath = path.join(parent, filename);
-    } else if (targetRestorePath.startsWith('~')) {
-      targetRestorePath = path.join(os.homedir(), targetRestorePath.slice(1));
-    }
+    const restored = writeRestoredFile({
+      restorePath, sourcePath: filePath,
+      filename: parsed.filename, data: parsed.fileData, addStep,
+    });
 
-    // Check if output is directory, if so join with name
+    recordAuthSuccess();
+    res.json({
+      success: true,
+      restorePath: restored.path,
+      filename: restored.filename,
+      fileSize: parsed.fileData.length,
+      outputHash: restored.hash,
+      hardwareLockVerified: hardwareLockUsed,
+      duressTriggered: isDuress,
+      algorithm: algorithmUsed,
+      steganography: isSteg,
+      steps,
+    });
+
+  } catch (err) {
+    // MIRAGE-008: los fallos de autenticación y de parsing devuelven todos el
+    // MISMO mensaje, y no se envían los pasos intermedios. En la versión
+    // anterior el cliente recibía 4 mensajes distinguibles ("Header Error",
+    // "Payload Error: Malformed filename length", etc.) más el array `steps`
+    // completo, que revelaba exactamente en qué punto había fallado: un oráculo
+    // de la misma familia que un padding oracle.
+    if (!err.isPolicy) recordAuthFailure();
+    const pub = toPublicError(err);
+    if (pub.internal) console.error(`[Decrypt] detalle interno: ${pub.internal}`);
+    res.status(pub.status).json({
+      success: false,
+      error: pub.message,
+      steps: sanitizeSteps(steps, false),
+    });
+  } finally {
+    releaseKdfSlot();
+  }
+});
+
+/**
+ * Escribe un archivo restaurado.
+ *
+ * MIRAGE-001 (CRÍTICO): el nombre viene DENTRO del archivo cifrado. Que el
+ * AEAD haya autenticado ese nombre solo prueba QUIÉN lo escribió, no que sea
+ * seguro: en el escenario "recibo un .wraith de un tercero", el propio autor
+ * del archivo es el atacante. La versión anterior hacía
+ * `path.join(destino, nombreDelPayload)`, y un nombre como
+ * `../../../../tmp/x` escapaba del destino. Verificado en la auditoría
+ * escribiendo /tmp/MIRAGE_PWNED.txt.
+ *
+ * Ahora el nombre se reduce a su componente final con safeBasename y, para
+ * rutas relativas de bóveda, se usa safeJoin con comprobación de contención.
+ */
+function writeRestoredFile({ restorePath, sourcePath, filename, data, addStep }) {
+  const safeName = safeBasename(filename, 'restored_file.bin');
+  if (safeName !== filename) {
+    addStep(`Nombre del payload saneado: ${JSON.stringify(filename)} → ${safeName}`, true);
+  }
+
+  let target;
+  if (!restorePath) {
+    const parent = sourcePath ? path.dirname(resolveUserPath(sourcePath)) : os.homedir();
+    target = path.join(parent, safeName);
+  } else {
+    const resolved = resolveUserPath(restorePath, 'ruta de restauración');
+    let isDir = false;
     try {
-      if (fs.existsSync(targetRestorePath) && fs.lstatSync(targetRestorePath).isDirectory()) {
-        targetRestorePath = path.join(targetRestorePath, filename);
+      isDir = fs.existsSync(resolved) && fs.lstatSync(resolved).isDirectory();
+    } catch { /* si no se puede comprobar, se trata como archivo */ }
+    target = isDir ? path.join(resolved, safeName) : resolved;
+  }
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, data);
+  addStep(`Archivo restaurado en ${target}`);
+
+  const hash = crypto.createHash('sha3-256').update(data).digest('hex');
+  addStep(`SHA3-256 restaurado: ${hash}`);
+  return { path: target, filename: safeName, hash };
+}
+
+// ==========================================
+// EMERGENCY DEFENSE & NUCLEAR OPTIONS ENGINE
+// ==========================================
+
+const EMERGENCY_CONFIG_PATH = path.join(os.homedir(), '.project-mirage-emergency.json');
+
+function isSystemPath(targetPath) {
+  if (!targetPath || typeof targetPath !== 'string') return true;
+  let raw = targetPath.replace(/\\/g, '/').toLowerCase();
+  let resolved = path.resolve(targetPath).replace(/\\/g, '/').toLowerCase();
+
+  // Root paths
+  if (/^[a-z]:\/?$/.test(resolved) || resolved === '/' || resolved === '//' || raw === '/') {
+    return true;
+  }
+
+  const systemBlacklist = [
+    'c:/windows',
+    'c:/program files',
+    'c:/program files (x86)',
+    'c:/programdata/microsoft',
+    'c:/system volume information',
+    'c:/$recycle.bin',
+    'c:/boot',
+    'c:/efi',
+    'c:/recovery',
+    '/bin',
+    '/sbin',
+    '/usr/bin',
+    '/usr/sbin',
+    '/usr',
+    '/etc',
+    '/sys',
+    '/proc',
+    '/dev',
+    '/boot',
+    '/system',
+    '/library',
+    '/applications'
+  ];
+
+  for (const bl of systemBlacklist) {
+    if (resolved === bl || resolved.startsWith(bl + '/') || raw === bl || raw.startsWith(bl + '/')) {
+      return true;
+    }
+  }
+
+  if (resolved === 'c:/users' || resolved === '/users' || resolved === '/home' || raw === '/users' || raw === '/home') {
+    return true;
+  }
+
+  const selfDir = __dirname.replace(/\\/g, '/').toLowerCase();
+  if (resolved === selfDir || resolved === selfDir + '/node_modules' || resolved.startsWith(selfDir + '/')) {
+    return true;
+  }
+
+  return false;
+}
+
+// serializeMultiPayload / deserializeMultiPayload viven ahora en lib/format.js
+// (MIRAGE-003: las longitudes eran `double` sin validar; ahora son uint64 con
+// comprobacion de limites y rechazo de bytes sobrantes).
+
+function scanEmergencyFiles(targetPaths, exclusions = [], addStep = null) {
+  const resultFiles = [];
+  const excludedFiles = [];
+  const systemProtected = [];
+  let totalBytes = 0;
+
+  const normalizedExclusions = exclusions.map(ex => ex.trim().toLowerCase()).filter(Boolean);
+
+  const shouldExclude = (filePath, fileName) => {
+    const lowerPath = filePath.replace(/\\/g, '/').toLowerCase();
+    const lowerName = fileName.toLowerCase();
+
+    for (const pattern of normalizedExclusions) {
+      if (pattern.startsWith('.')) {
+        if (lowerName.endsWith(pattern)) return true;
+      } else if (pattern.includes('/') || pattern.includes('\\')) {
+        if (lowerPath.includes(pattern.replace(/\\/g, '/'))) return true;
+      } else {
+        if (lowerName === pattern || lowerPath.split('/').includes(pattern)) return true;
       }
-    } catch (e) {}
+    }
+    return false;
+  };
 
-    // Ensure parent directories exist
-    fs.mkdirSync(path.dirname(targetRestorePath), { recursive: true });
-    fs.writeFileSync(targetRestorePath, fileData);
-    addStep(`Decrypted file successfully saved to: ${targetRestorePath}`);
+  const walkDir = (currentPath, baseDir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    } catch (e) {
+      if (addStep) addStep(`[Scan] Skipping inaccessible directory: ${currentPath} (${e.message})`, false);
+      return;
+    }
 
-    const outputHash = crypto.createHash('sha3-256').update(fileData).digest('hex');
-    addStep(`Output SHA3-256 (Restored): ${outputHash}`);
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+      
+      if (isSystemPath(fullPath)) {
+        systemProtected.push(fullPath);
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        if (shouldExclude(fullPath, entry.name)) {
+          excludedFiles.push({ path: fullPath, isDir: true });
+          continue;
+        }
+        walkDir(fullPath, baseDir);
+      } else if (entry.isFile()) {
+        if (shouldExclude(fullPath, entry.name)) {
+          excludedFiles.push({ path: fullPath, isDir: false });
+          continue;
+        }
+        try {
+          const stats = fs.statSync(fullPath);
+          const relPath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+          resultFiles.push({
+            fullPath,
+            relPath: relPath || entry.name,
+            size: stats.size,
+            name: entry.name
+          });
+          totalBytes += stats.size;
+        } catch (e) {
+          // ignore unreadable
+        }
+      }
+    }
+  };
+
+  for (let target of targetPaths) {
+    if (!target) continue;
+    if (target.startsWith('~')) {
+      target = path.join(os.homedir(), target.slice(1));
+    }
+    const resolved = path.resolve(target);
+    if (!fs.existsSync(resolved)) {
+      continue;
+    }
+
+    if (isSystemPath(resolved)) {
+      systemProtected.push(resolved);
+      continue;
+    }
+
+    const stats = fs.statSync(resolved);
+    if (stats.isDirectory()) {
+      walkDir(resolved, resolved);
+    } else if (stats.isFile()) {
+      if (!shouldExclude(resolved, path.basename(resolved))) {
+        resultFiles.push({
+          fullPath: resolved,
+          relPath: path.basename(resolved),
+          size: stats.size,
+          name: path.basename(resolved)
+        });
+        totalBytes += stats.size;
+      } else {
+        excludedFiles.push({ path: resolved, isDir: false });
+      }
+    }
+  }
+
+  return {
+    files: resultFiles,
+    excludedCount: excludedFiles.length,
+    systemProtectedCount: systemProtected.length,
+    totalBytes,
+    totalCount: resultFiles.length
+  };
+}
+
+function writeEmergencyAuditLog(action, details) {
+  try {
+    const logDir = path.join(os.homedir(), '.project-mirage-logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const logDate = new Date().toISOString().split('T')[0];
+    const logFile = path.join(logDir, `audit_emergency_${logDate}.log`);
+    const logEntry = `[${new Date().toISOString()}] [${action}] ${JSON.stringify(details)}\n`;
+    fs.appendFileSync(logFile, logEntry, 'utf8');
+  } catch (e) {
+    console.error('Failed to write audit log:', e.message);
+  }
+}
+
+function getDefaultEmergencyConfig() {
+  return {
+    targetPaths: [
+      path.join(os.homedir(), 'Documents', 'Confidential')
+    ],
+    exclusions: ['.git', 'node_modules', '.tmp', '.log', 'desktop.ini', 'thumbs.db'],
+    algorithm: 'mirage-c4',
+    outputPath: path.join(os.homedir(), 'MirageVault'),
+    backupEnabled: true,
+    backupPath: path.join(os.homedir(), 'MirageBackups'),
+    shredOriginalEnabled: false,
+    shredPasses: '3',
+    hardwareLockEnabled: false,
+    metadataScrubEnabled: true,
+    sizeObfuscationEnabled: true,
+    ttlEnabled: false,
+    ttlValue: '0'
+  };
+}
+
+// Emergency API: Get Configuration
+app.get('/api/emergency/config', (req, res) => {
+  try {
+    if (fs.existsSync(EMERGENCY_CONFIG_PATH)) {
+      const data = JSON.parse(fs.readFileSync(EMERGENCY_CONFIG_PATH, 'utf8'));
+      return res.json({ success: true, config: { ...getDefaultEmergencyConfig(), ...data } });
+    }
+  } catch (e) {
+    console.warn('Failed to read emergency config, returning defaults:', e.message);
+  }
+  res.json({ success: true, config: getDefaultEmergencyConfig() });
+});
+
+// Emergency API: Save Configuration
+app.post('/api/emergency/config', (req, res) => {
+  try {
+    const config = req.body.config || {};
+    fs.writeFileSync(EMERGENCY_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    writeEmergencyAuditLog('CONFIG_SAVED', { targetCount: (config.targetPaths || []).length, algorithm: config.algorithm });
+    res.json({ success: true, message: 'Configuration saved successfully' });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Emergency API: Scan & Pre-flight Preview
+app.post('/api/emergency/scan', (req, res) => {
+  try {
+    const { targetPaths = [], exclusions = [] } = req.body;
+    const scanResult = scanEmergencyFiles(targetPaths, exclusions);
+    res.json({ success: true, ...scanResult });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Emergency API: Execute Nuclear Defense / Emergency Vault
+app.post('/api/emergency/execute', async (req, res) => {
+  const steps = [];
+  const addStep = (msg, success = true) => {
+    steps.push({ msg, success, timestamp: Date.now() });
+    console.log(`[Emergency] ${msg}`);
+  };
+
+  try {
+    const {
+      password,
+      doubleFactorPassword = '',
+      targetPaths = [],
+      exclusions = [],
+      algorithm = 'mirage-c4',
+      outputPath,
+      backupEnabled = true,
+      backupPath,
+      shredOriginalEnabled = false,
+      shredPasses = '3',
+      hardwareLockEnabled = false,
+      metadataScrubEnabled = true,
+      sizeObfuscationEnabled = true,
+      ttlEnabled = false,
+      ttlValue = '0',
+      confirmationKeyword = ''
+    } = req.body;
+
+    if (!password || password.length < 10) {
+      throw new Error('Policy Error: Master emergency password must be at least 10 characters long');
+    }
+
+    if (shredOriginalEnabled) {
+      if (confirmationKeyword.toUpperCase() !== 'CONFIRMAR' && confirmationKeyword.toUpperCase() !== 'PROTECT') {
+        throw new Error('Safety Protection: You must provide explicit confirmation keyword (CONFIRMAR) to enable file shredding.');
+      }
+    }
+
+    addStep('🛡️ Initiating Emergency Defense Protocol...');
+
+    // 1. Scan target files
+    const scan = scanEmergencyFiles(targetPaths, exclusions, addStep);
+    if (scan.files.length === 0) {
+      throw new Error('No valid files found to protect in the configured target paths.');
+    }
+    addStep(`Identified ${scan.files.length} target files (${(scan.totalBytes / (1024 * 1024)).toFixed(2)} MB). Excluded: ${scan.excludedCount}, System Protected: ${scan.systemProtectedCount}`);
+
+    // 2. Prepare files list with content and SHA3
+    const filesToPackage = [];
+    for (const f of scan.files) {
+      let buffer = fs.readFileSync(f.fullPath);
+      
+      // Metadata scrub if enabled
+      if (metadataScrubEnabled) {
+        const ext = path.extname(f.name).toLowerCase();
+        if (ext === '.jpg' || ext === '.jpeg') {
+          buffer = scrubJpeg(buffer);
+        } else if (ext === '.png') {
+          buffer = scrubPng(buffer);
+        }
+      }
+
+      const sha3 = crypto.createHash('sha3-256').update(buffer).digest('hex');
+      filesToPackage.push({
+        relPath: f.relPath,
+        buffer,
+        sha3,
+        fullPath: f.fullPath,
+        origSize: f.size
+      });
+    }
+    addStep(`All ${filesToPackage.length} files loaded and SHA3-256 verification hashes generated.`);
+
+    // 3. Safety Backup (if enabled)
+    let backupFileCreated = null;
+    if (backupEnabled) {
+      let resolvedBackupDir = backupPath || path.join(os.homedir(), 'MirageBackups');
+      if (resolvedBackupDir.startsWith('~')) {
+        resolvedBackupDir = path.join(os.homedir(), resolvedBackupDir.slice(1));
+      }
+      fs.mkdirSync(resolvedBackupDir, { recursive: true });
+
+      const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+      backupFileCreated = path.join(resolvedBackupDir, `Backup_Emergency_${timestampStr}.bak`);
+
+      // Write verified unencrypted raw package bundle as backup
+      const backupPayload = serializeMultiPayload(filesToPackage, 0);
+      fs.writeFileSync(backupFileCreated, backupPayload);
+      const backupHash = crypto.createHash('sha3-256').update(backupPayload).digest('hex');
+      addStep(`Safety Backup Created & Verified: ${backupFileCreated} (SHA3: ${backupHash.substring(0, 16)}...)`);
+    } else {
+      addStep('⚠️ Safety Backup bypassed by user configuration.');
+    }
+
+    // 4. Calculate Expiration TTL
+    let expirationTime = 0;
+    if (ttlEnabled && ttlValue && parseFloat(ttlValue) > 0) {
+      expirationTime = Date.now() + parseFloat(ttlValue) * 60 * 60 * 1000;
+      addStep(`TTL Configured: Vault expires on ${new Date(expirationTime).toLocaleString()}`);
+    }
+
+    // 5. Serialize Multi-file Payload
+    let payload = serializeMultiPayload(filesToPackage, expirationTime);
+    addStep(`Multi-file payload bundled (${payload.length} bytes).`);
+
+    // ---------------------------------------------------------------------
+    // Blindaje criptografico de la boveda de emergencia.
+    //
+    // Este bloque reimplementaba a mano la cascada v1, el padding aditivo y la
+    // serializacion con longitudes `double`. Ahora delega en encryptVault, el
+    // MISMO nucleo que /api/encrypt, de modo que cualquier correccion futura
+    // aplica a las dos rutas a la vez. Antes eran dos copias que podian
+    // divergir, y de hecho divergian: esta ruta nunca comprobaba la politica
+    // de contrasenas.
+    //
+    // Correcciones heredadas automaticamente: MIRAGE-002 (cascada no lineal),
+    // 003 (longitudes uint64 validadas), 005 (AAD completo), 006/007 (HKDF y
+    // codificacion TLV), 011 (buckets Padme) y 015 (borrado de claves).
+    // ---------------------------------------------------------------------
+    requirePasswordPolicy(password, 'La contrasena de la boveda');
+    if (doubleFactorPassword) {
+      requirePasswordPolicy(doubleFactorPassword, 'El secreto secundario');
+    }
+
+    const hardwareId = getHardwareIdIfEnabled(hardwareLockEnabled);
+    addStep('Derivando clave con scrypt (N=131072, r=8, p=1) y HKDF por capa...');
+
+    const { envelope, flags } = encryptVault({
+      payload,
+      password,
+      secondFactor: doubleFactorPassword,
+      hardwareId,
+      algorithm: algorithm === 'mirage-c4' ? ALGORITHMS.CASCADE : ALGORITHMS.AES,
+      bucketPadding: sizeObfuscationEnabled,
+      isVault: true,
+    });
+    const outputBuffer = envelope;
+
+    if (algorithm === 'mirage-c4') {
+      addStep('Cascada Mirage-C4 v2: Camellia-256-CBC -> ChaCha20 -> ARIA-256-CBC -> AES-256-GCM');
+      addStep('Aviso: la cascada da defensa en profundidad, NO 1024 bits de seguridad.');
+    } else {
+      addStep('AES-256-GCM con AAD reforzado');
+    }
+    addStep(`Boveda v2 construida: ${outputBuffer.length} bytes (flags 0x${flags.toString(16)})`);
+
+    // 8. Save Vault File
+    let resolvedOutputDir = outputPath || path.join(os.homedir(), 'MirageVault');
+    if (resolvedOutputDir.startsWith('~')) {
+      resolvedOutputDir = path.join(os.homedir(), resolvedOutputDir.slice(1));
+    }
+    fs.mkdirSync(resolvedOutputDir, { recursive: true });
+
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const finalVaultPath = path.join(resolvedOutputDir, `Emergencia_VAULT_${timestampStr}.wraith`);
+    fs.writeFileSync(finalVaultPath, outputBuffer);
+
+    const finalSha3 = crypto.createHash('sha3-256').update(outputBuffer).digest('hex');
+    addStep(`🛡️ Emergency Vault saved: ${finalVaultPath} (SHA3: ${finalSha3})`);
+
+    // 9. Shred Originals (ONLY IF EXPLICITLY ENABLED & CONFIRMED)
+    let shreddedCount = 0;
+    if (shredOriginalEnabled) {
+      addStep(`⚠️ DESTRUCTIVE ACTION: Executing ${shredPasses}-pass secure overwrite on ${filesToPackage.length} original files...`);
+      const passes = parseInt(shredPasses) || 3;
+
+      for (const item of filesToPackage) {
+        if (!isSystemPath(item.fullPath) && fs.existsSync(item.fullPath)) {
+          secureShred(item.fullPath, passes);
+          shreddedCount++;
+        }
+      }
+      addStep(`✓ Securely shredded ${shreddedCount} original source files from physical disk.`);
+    } else {
+      addStep('✓ Original source files left intact (Non-destructive mode).');
+    }
+
+    // 10. Write Audit Log
+    writeEmergencyAuditLog('EMERGENCY_EXECUTE', {
+      fileCount: filesToPackage.length,
+      totalBytes: scan.totalBytes,
+      algorithm,
+      vaultPath: finalVaultPath,
+      vaultSha3: finalSha3,
+      backupFile: backupFileCreated,
+      shreddedCount,
+      hardwareLock: hardwareLockEnabled
+    });
 
     res.json({
       success: true,
-      restorePath: targetRestorePath,
-      filename,
-      fileSize: fileData.length,
-      outputHash,
-      hardwareLockVerified: hardwareLockEnabled,
-      algorithm: (mode === 0x03 || mode === 0x04) ? 'mirage-c4' : 'aes-256-gcm',
-      steganography: isSteg,
+      vaultPath: finalVaultPath,
+      vaultHash: finalSha3,
+      fileCount: filesToPackage.length,
+      totalBytes: scan.totalBytes,
+      backupPath: backupFileCreated,
+      shreddedCount,
       steps
     });
 
   } catch (err) {
-    addStep(err.message, false);
+    addStep(`ERROR: ${err.message}`, false);
+    writeEmergencyAuditLog('EMERGENCY_ERROR', { error: err.message });
     res.status(500).json({
       success: false,
       error: err.message,
       steps
     });
+  }
+});
+
+// Emergency API: Restore Vault
+app.post('/api/emergency/restore', async (req, res) => {
+  const steps = [];
+  const addStep = (msg, success = true) => {
+    steps.push({ msg, success, timestamp: Date.now() });
+    console.log(`[EmergencyRestore] ${msg}`);
+  };
+
+  try {
+    const { vaultPath, password, doubleFactorPassword = '', restoreDir } = req.body;
+
+    if (!vaultPath) {
+      throw new Error('Vault path is required');
+    }
+    if (!password) {
+      throw new Error('Master emergency password is required');
+    }
+
+    let resolvedVaultPath = vaultPath;
+    if (resolvedVaultPath.startsWith('~')) {
+      resolvedVaultPath = path.join(os.homedir(), resolvedVaultPath.slice(1));
+    }
+    if (!fs.existsSync(resolvedVaultPath)) {
+      throw new Error(`Vault file not found: ${resolvedVaultPath}`);
+    }
+
+    let encryptedBuffer = fs.readFileSync(resolvedVaultPath);
+    addStep(`Loaded Emergency Vault: ${resolvedVaultPath} (${encryptedBuffer.length} bytes)`);
+
+    // Steg check
+    if (encryptedBuffer.length >= 12) {
+      const signature = encryptedBuffer.subarray(-8).toString('ascii');
+      if (signature === 'MIRGSTEG') {
+        const payloadLen = encryptedBuffer.readUInt32BE(encryptedBuffer.length - 12);
+        encryptedBuffer = encryptedBuffer.subarray(
+          encryptedBuffer.length - 12 - payloadLen,
+          encryptedBuffer.length - 12
+        );
+        addStep('Steganographic carrier removed, raw encrypted payload extracted.');
+      }
+    }
+
+    // Validate Header
+    // ------------------------------------------------------------------
+    // MIRAGE-001 (CRITICA): antes se escribia con path.join(base, f.relPath),
+    //   lo que permitia que un vault malicioso ('../../.bashrc') escribiese
+    //   fuera de la carpeta de restauracion. Ahora se usa safeJoin().
+    // MIRAGE-013: una sola derivacion scrypt, no dos intentos secuenciales.
+    // MIRAGE-008: los errores salen opacos (toPublicError / sanitizeSteps).
+    // MIRAGE-010: el TTL se comprueba ANTES de escribir cualquier byte, con
+    //   la advertencia honesta de que NO es un control criptografico.
+    // ------------------------------------------------------------------
+    let hardwareId = '';
+    try { hardwareId = getHardwareUUID(); } catch (_) { hardwareId = ''; }
+
+    let payloadBuffer = null;
+    let hardwareLockVerified = false;
+    let legacyVault = false;
+
+    if (isLegacyV1(encryptedBuffer)) {
+      addStep('Formato v1 detectado (solo lectura). Se recomienda re-cifrar a v2.');
+      const legacy = decryptLegacyV1(encryptedBuffer, {
+        password,
+        secondFactor: doubleFactorPassword || '',
+        hardwareId
+      });
+      payloadBuffer = legacy.payload;
+      hardwareLockVerified = !!legacy.hardwareLockUsed;
+      legacyVault = true;
+      addStep(migrateNotice);
+    } else {
+      addStep('Abriendo envoltorio v2 (cascada no lineal, AAD completo)...');
+      const opened = decryptVault(encryptedBuffer, {
+        password,
+        secondFactor: doubleFactorPassword || '',
+        hardwareId
+      });
+      payloadBuffer = opened.payload;
+      hardwareLockVerified = !!opened.hardwareLockUsed;
+      if (opened.isDuress) {
+        addStep('Bloque de coaccion abierto (contenido senuelo).');
+      }
+    }
+
+    // --- TTL: comprobado antes de escribir nada (MIRAGE-010) ---
+    let expirationTime = 0;
+    let files = [];
+    if (isMultiPayload(payloadBuffer)) {
+      const multi = deserializeMultiPayload(payloadBuffer);
+      expirationTime = multi.expirationTime || 0;
+      files = multi.files.map((f) => ({ relPath: f.relPath, content: f.content }));
+    } else {
+      const single = deserializePayload(payloadBuffer);
+      expirationTime = single.expirationTime || 0;
+      files = [{ relPath: single.filename, content: single.fileBuffer }];
+    }
+
+    if (expirationTime > 0 && Date.now() > expirationTime) {
+      throw new PolicyError(
+        'Este vault declara una fecha de caducidad ya superada (' +
+        new Date(expirationTime).toISOString() + '). No se restaura nada. ' +
+        'ADVERTENCIA HONESTA: el TTL NO es un control criptografico; quien ' +
+        'posea el archivo y la contrasena puede ignorarlo con otro cliente.'
+      );
+    }
+
+    // --- Escritura contenida (MIRAGE-001) ---
+    const targetRestoreBase = resolveUserPath(
+      restoreDir || path.join(os.homedir(), 'MirageRestored'),
+      'carpeta de restauracion'
+    );
+    fs.mkdirSync(targetRestoreBase, { recursive: true });
+
+    const restoredSummary = [];
+    for (const f of files) {
+      // safeJoin lanza si relPath intenta salir de la base, es absoluto,
+      // contiene '..', NUL, o (en Windows) un prefijo de unidad.
+      const outFilePath = safeJoin(targetRestoreBase, f.relPath);
+      fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
+      fs.writeFileSync(outFilePath, f.content);
+
+      const actualSha3 = crypto.createHash('sha3-256').update(f.content).digest('hex');
+      restoredSummary.push({
+        relPath: f.relPath,
+        outPath: outFilePath,
+        size: f.content.length,
+        sha3: actualSha3,
+        legacyFormat: legacyVault
+      });
+      addStep('Restaurado: ' + path.basename(outFilePath) + ' (' + f.content.length + ' bytes)');
+    }
+
+    writeEmergencyAuditLog('EMERGENCY_RESTORE', {
+      vaultPath: resolvedVaultPath,
+      restoreDir: targetRestoreBase,
+      fileCount: restoredSummary.length,
+      hardwareLockVerified
+    });
+
+    res.json({
+      success: true,
+      restoreDir: targetRestoreBase,
+      fileCount: restoredSummary.length,
+      files: restoredSummary,
+      hardwareLockVerified,
+      steps
+    });
+
+  } catch (err) {
+    addStep(`ERROR: ${err.message}`, false);
+    writeEmergencyAuditLog('RESTORE_ERROR', { error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      steps
+    });
+  }
+});
+
+// Emergency API: Get Audit Logs
+app.get('/api/emergency/logs', (req, res) => {
+  try {
+    const logDir = path.join(os.homedir(), '.project-mirage-logs');
+    if (!fs.existsSync(logDir)) {
+      return res.json({ success: true, logs: [] });
+    }
+    const logFiles = fs.readdirSync(logDir).filter(f => f.startsWith('audit_emergency_')).sort().reverse();
+    const logs = [];
+    for (const file of logFiles.slice(0, 5)) {
+      const content = fs.readFileSync(path.join(logDir, file), 'utf8');
+      logs.push({ file, content });
+    }
+    res.json({ success: true, logs });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
@@ -1370,11 +2015,13 @@ function startServer(port = PORT) {
           console.log(`Project Mirage Local API Server online (HTTPS)!`);
           console.log(`Listening on https://localhost:${port}`);
           console.log(`Platform UUID: ${getHardwareUUID()}`);
-          if (supportedCurves.some(c => c.toLowerCase().includes('kyber'))) {
-            console.log(`Post-Quantum Cryptography: Enabled (hybrid key agreement active)`);
-          } else {
-            console.log(`Post-Quantum Cryptography: Fallback active (standard ECC)`);
-          }
+          // MIRAGE-016: aqui se anunciaba 'Post-Quantum Cryptography: Enabled'.
+          // Era FALSO: el cifrado de archivos no usa ningun KEM post-cuantico.
+          // Mirage-C4 v2 = Camellia-CBC + ARIA-CBC + ChaCha20 + AES-GCM con
+          // claves de 256 bits derivadas por scrypt+HKDF. Frente a Grover eso
+          // es ~128 bits de margen, igual que AES-256. NO es 1024 bits ni PQC.
+          console.log(`Cifrado de archivos: Mirage-C4 v2 (cascada no lineal, claves de 256 bits)`);
+          console.log(`Post-cuantica: NO implementada para el cifrado de archivos.`);
           console.log(`========================================`);
           resolve(serverInstance);
         });
@@ -1412,27 +2059,46 @@ function stopServer() {
 // Start Express Server automatically if run directly
 const isDirectRun = process.argv[1] && (
   process.argv[1].endsWith('server.js') || 
-  process.argv[1].endsWith('test-crypto.js')
+  process.argv[1].endsWith('test-crypto.js') ||
+  process.argv[1].endsWith('test-emergency.js')
 );
 
 if (process.env.NODE_ENV !== 'test' && isDirectRun) {
   startServer(PORT);
 }
 
-// Export helpers for testing
+// ---------------------------------------------------------------------------
+// Exportaciones para pruebas y para main.js
+//
+// Ya NO se exportan deriveKey, encryptMirageC4, decryptMirageC4 ni
+// applySizePadding: esas funciones se eliminaron por los hallazgos
+// MIRAGE-002/006/007/011. Su sustituto vive en lib/*.js y se prueba en
+// test-security.mjs.
+// ---------------------------------------------------------------------------
 export {
   getHardwareUUID,
+  getHardwareIdIfEnabled,
   secureShred,
   scrubJpeg,
   scrubPng,
-  deriveKey,
-  applySizePadding,
-  serializePayload,
-  deserializePayload,
+  resolveUserPath,
+  applySteganography,
+  isSystemPath,
+  scanEmergencyFiles,
+  getDefaultEmergencyConfig,
   startServer,
   stopServer,
-  encryptMirageC4,
-  decryptMirageC4,
-  applySteganography
 };
 
+// Reexportamos el nucleo criptografico para que los tests y las herramientas
+// externas usen exactamente el mismo codigo que el servidor.
+export {
+  serializePayload, deserializePayload,
+  serializeMultiPayload, deserializeMultiPayload,
+  appendToCarrier, extractFromCarrier,
+} from './lib/format.js';
+export { encryptVault, decryptVault, ALGORITHMS } from './lib/vault.js';
+export { splitSecret, combineShares } from './lib/shamir.js';
+export { safeJoin, safeBasename } from './lib/paths.js';
+export { padmeLength } from './lib/padding.js';
+export { runKnownAnswerTests, summarizeKats } from './lib/kat.js';
