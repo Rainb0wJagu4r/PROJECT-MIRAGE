@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/mirage-core",
     "crates/mirage-cli",
+    "crates/mirage-gui",
 ]
 
 [workspace.package]
