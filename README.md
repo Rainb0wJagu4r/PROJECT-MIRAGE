@@ -160,11 +160,17 @@ If the Vite UI loads but the console widget shows `OFFLINE` or request errors:
 
 ## Verification and Testing
 
-To verify the cryptographic primitives and KDF routines, run the automated test suite in your shell:
+To verify the cryptographic primitives, KDF routines, AAD bindings, and known answer test vectors:
+
 ```bash
-node test-crypto.js
+# 1. Run the comprehensive security and adversarial test suite (73 test cases)
+npm test
+
+# 2. Run Known Answer Tests (KATs) against published standard test vectors (RFC 8439, 5794, 3713, 5869, 7914, NIST SP 800-38A/D)
+npm run test:kat
 ```
-All tests should return `PASS`.
+
+All test suites should complete with 100% passing results (`Resultado: 73 correctas, 0 fallidas, 73 totales` and `overall: true`).
 
 ---
 
