@@ -713,10 +713,11 @@ app.post('/api/encrypt', async (req, res) => {
     let sourceFilePath = null;
     let settings = {};
 
-    if (req.headers['content-type'] === 'application/octet-stream') {
-      fileBuffer = req.body;
-      // El nombre viene de una cabecera HTTP: lo saneamos antes de usarlo.
-      filename = safeBasename(req.headers['x-file-name'] || 'untitled.bin', 'untitled.bin');
+    const isOctetStream = Buffer.isBuffer(req.body) || (req.headers['content-type'] && req.headers['content-type'].includes('application/octet-stream'));
+    if (isOctetStream && req.body && req.body.length > 0) {
+      fileBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+      const rawHeaderName = req.headers['x-file-name'] ? decodeURIComponent(req.headers['x-file-name']) : 'untitled.bin';
+      filename = safeBasename(rawHeaderName, 'untitled.bin');
       try {
         settings = JSON.parse(req.headers['x-settings'] || '{}');
       } catch {
@@ -1022,8 +1023,34 @@ app.post('/api/decrypt', async (req, res) => {
   await sleep(currentBackoffMs());
   await acquireKdfSlot();
   try {
-    const { filePath, partPaths, sharePaths, password, doubleFactorPassword = '', restorePath } = req.body || {};
     let encryptedBuffer;
+    let filePath;
+    let partPaths;
+    let sharePaths;
+    let password;
+    let doubleFactorPassword = '';
+    let restorePath = '';
+
+    const isOctetStream = Buffer.isBuffer(req.body) || (req.headers['content-type'] && req.headers['content-type'].includes('application/octet-stream'));
+    if (isOctetStream && req.body && req.body.length > 0) {
+      encryptedBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+      let settings = {};
+      try {
+        settings = JSON.parse(req.headers['x-settings'] || '{}');
+      } catch { /* ignore */ }
+      password = settings.password || '';
+      doubleFactorPassword = settings.doubleFactorPassword || '';
+      restorePath = settings.outputPath || settings.restorePath || '';
+      addStep(`Archivo recibido para descifrar (${encryptedBuffer.length} bytes)`);
+    } else {
+      const body = req.body || {};
+      filePath = body.filePath;
+      partPaths = body.partPaths;
+      sharePaths = body.sharePaths;
+      password = body.password;
+      doubleFactorPassword = body.doubleFactorPassword || '';
+      restorePath = body.restorePath || body.outputPath || '';
+    }
 
     if (!password) {
       throw new PolicyError('Se requiere la contraseña.');

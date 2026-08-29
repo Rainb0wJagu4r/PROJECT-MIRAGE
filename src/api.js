@@ -13,13 +13,24 @@ const getBridge = () => {
   return null;
 };
 
+async function safeFetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    throw new Error(text || `Error de servidor HTTP ${res.status}: ${res.statusText}`);
+  }
+  return data;
+}
+
 export const api = {
   getSystemInfo: async () => {
     const bridge = getBridge();
     if (bridge) return await bridge.getSystemInfo();
     try {
-      const res = await fetch('/api/system-info');
-      return await res.json();
+      return await safeFetchJson('/api/system-info');
     } catch {
       return { uuid: 'LOCAL_WEB_NODE', platform: navigator.platform || 'web', arch: 'browser', nodeVersion: 'web' };
     }
@@ -29,8 +40,7 @@ export const api = {
     const bridge = getBridge();
     if (bridge) return await bridge.getSystemStatus();
     try {
-      const res = await fetch('/api/system-status');
-      return await res.json();
+      return await safeFetchJson('/api/system-status');
     } catch {
       return {
         status: 'online',
@@ -54,8 +64,7 @@ export const api = {
     const bridge = getBridge();
     if (bridge) return await bridge.autocomplete(queryPath);
     try {
-      const res = await fetch(`/api/autocomplete?path=${encodeURIComponent(queryPath || '')}`);
-      return await res.json();
+      return await safeFetchJson(`/api/autocomplete?path=${encodeURIComponent(queryPath || '')}`);
     } catch {
       return { currentDir: queryPath, items: [] };
     }
@@ -65,8 +74,7 @@ export const api = {
     const bridge = getBridge();
     if (bridge) return await bridge.getShortcuts();
     try {
-      const res = await fetch('/api/system-shortcuts');
-      return await res.json();
+      return await safeFetchJson('/api/system-shortcuts');
     } catch {
       return { shortcuts: [], drives: [] };
     }
@@ -77,8 +85,7 @@ export const api = {
     if (bridge) return await bridge.browseDir(targetPath);
     try {
       const url = targetPath ? `/api/browse-dir?path=${encodeURIComponent(targetPath)}` : '/api/browse-dir';
-      const res = await fetch(url);
-      return await res.json();
+      return await safeFetchJson(url);
     } catch {
       return { currentPath: '', parentPath: null, items: [] };
     }
@@ -88,8 +95,7 @@ export const api = {
     const bridge = getBridge();
     if (bridge) return await bridge.getFileInfo(filePath);
     try {
-      const res = await fetch(`/api/file-info?path=${encodeURIComponent(filePath || '')}`);
-      return await res.json();
+      return await safeFetchJson(`/api/file-info?path=${encodeURIComponent(filePath || '')}`);
     } catch {
       return { exists: false };
     }
@@ -106,14 +112,13 @@ export const api = {
         'X-File-Name': encodeURIComponent(payload.fileName || 'file.bin'),
         'X-Settings': JSON.stringify(payload.settings || {})
       };
-      const res = await fetch('/api/encrypt', {
+      return await safeFetchJson('/api/encrypt', {
         method: 'POST',
         headers,
         body: payload.fileBuffer
       });
-      return await res.json();
     } else {
-      const res = await fetch('/api/encrypt', {
+      return await safeFetchJson('/api/encrypt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,7 +126,6 @@ export const api = {
           settings: payload.settings || {}
         })
       });
-      return await res.json();
     }
   },
 
@@ -131,7 +135,7 @@ export const api = {
 
     // Browser fallback via local HTTP API
     if (payload.fileBuffer) {
-      const res = await fetch('/api/decrypt', {
+      return await safeFetchJson('/api/decrypt', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -139,14 +143,12 @@ export const api = {
         },
         body: payload.fileBuffer
       });
-      return await res.json();
     } else {
-      const res = await fetch('/api/decrypt', {
+      return await safeFetchJson('/api/decrypt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      return await res.json();
     }
   },
 
@@ -154,8 +156,7 @@ export const api = {
     const bridge = getBridge();
     if (bridge) return await bridge.getEmergencyConfig();
     try {
-      const res = await fetch('/api/emergency/config');
-      return await res.json();
+      return await safeFetchJson('/api/emergency/config');
     } catch {
       return { targets: [] };
     }
@@ -164,52 +165,47 @@ export const api = {
   saveEmergencyConfig: async (config) => {
     const bridge = getBridge();
     if (bridge) return await bridge.saveEmergencyConfig(config);
-    const res = await fetch('/api/emergency/config', {
+    return await safeFetchJson('/api/emergency/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config })
     });
-    return await res.json();
   },
 
   scanEmergency: async (options) => {
     const bridge = getBridge();
     if (bridge) return await bridge.scanEmergency(options);
-    const res = await fetch('/api/emergency/scan', {
+    return await safeFetchJson('/api/emergency/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
     });
-    return await res.json();
   },
 
   executeEmergency: async (options) => {
     const bridge = getBridge();
     if (bridge) return await bridge.executeEmergency(options);
-    const res = await fetch('/api/emergency/execute', {
+    return await safeFetchJson('/api/emergency/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
     });
-    return await res.json();
   },
 
   restoreEmergency: async (options) => {
     const bridge = getBridge();
     if (bridge) return await bridge.restoreEmergency(options);
-    const res = await fetch('/api/emergency/restore', {
+    return await safeFetchJson('/api/emergency/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
     });
-    return await res.json();
   },
 
   getEmergencyLogs: async () => {
     const bridge = getBridge();
     if (bridge) return await bridge.getEmergencyLogs();
-    const res = await fetch('/api/emergency/logs');
-    return await res.json();
+    return await safeFetchJson('/api/emergency/logs');
   }
 };
 
