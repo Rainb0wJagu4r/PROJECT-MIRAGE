@@ -1,0 +1,20 @@
+[package]
+name = "mirage-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Command-Line Interface for Project Mirage and Mirage-C4 Cryptosystem"
+
+[[bin]]
+name = "mirage"
+path = "src/main.rs"
+
+[dependencies]
+mirage-core = { path = "../mirage-core" }
+clap.workspace = true
+colored.workspace = true
+indicatif.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true

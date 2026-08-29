@@ -40,7 +40,9 @@ Project Mirage is a secure, desktop-grade local web application for symmetric fi
 - **Duress Mode**: Supports decoy passwords that restore a mock warning document instead of the confidential payload.
 - **2-of-3 fragmentation (Shamir)**: real Shamir Secret Sharing over GF(2^8) with per-share HMAC. Any two shares reconstruct the file; a single share reveals **nothing** (information-theoretic). In v1 this was XOR parity and share 1 leaked the header in the clear.
 - **Secure shredder**: multiple random overwrite passes before unlinking. **No guarantee on SSD/NVMe, copy-on-write filesystems, or with snapshots** — see [Known limitations](#known-limitations).
-- **Carrier Appending (Encapsulation)**: Invisibly appends the encrypted payload to the end of a carrier image (PNG/JPEG) so it remains 100% viewable without revealing the payload.
+- **Pure Rust Cryptographic Engine**:
+  - `crates/mirage-core`: 100% memory-safe Rust library implementing the full Mirage-C4 v2 specification, TLV-KDF, Shamir 2-of-3, Padmé quantization, and container serialization. Eliminates JavaScript supply chain attack vectors and guarantees key zeroization in RAM with the `Zeroize` trait.
+  - `crates/mirage-cli`: Native, standalone command-line binary (`mirage`) for fast encryption, decryption, and integrity testing.
 
 ---
 
@@ -48,20 +50,16 @@ Project Mirage is a secure, desktop-grade local web application for symmetric fi
 
 ```
 project-mirage/
-├── package.json         # Run script declarations and dependencies
-├── vite.config.js       # React development server proxy settings
-├── server.js            # Express API server handling crypto operations
-├── index.html           # Main template configuration
-├── test-crypto.js       # Test suite for backend cryptography operations
-└── src/
-    ├── main.jsx         # Client entry point
-    ├── index.css        # Stylesheet overrides (Light/Dark themes)
-    ├── App.jsx          # React state coordination and UI layouts
-    └── components/
-        ├── Dropzone.jsx # File drag-and-drop handler
-        ├── PathInput.jsx# Local file path selector
-        ├── AdvancedOptions.jsx # Encryption configuration toggles
-        └── StegoConsole.jsx # Carrier Appending interface console
+├── Cargo.toml           # Rust workspace definition
+├── crates/
+│   ├── mirage-core/     # 100% Memory-Safe Core Cryptography (Rust)
+│   │   ├── src/         # kdf.rs, cascade.rs, format.rs, shamir.rs, padding.rs, vault.rs, kat.rs
+│   │   └── tests/       # Adversarial and Known Answer Test suites (Rust)
+│   └── mirage-cli/      # High-performance CLI binary (mirage)
+├── package.json         # Web GUI dependencies & run scripts
+├── vite.config.js       # Vite client bundler
+├── server.js            # Local loopback server
+└── src/                 # React Cyberpunk GUI
 ```
 
 ---
@@ -160,17 +158,37 @@ If the Vite UI loads but the console widget shows `OFFLINE` or request errors:
 
 ## Verification and Testing
 
-To verify the cryptographic primitives, KDF routines, AAD bindings, and known answer test vectors:
-
+### 1. Pure Rust Core Test Suite & Known Answer Tests (KAT)
 ```bash
-# 1. Run the comprehensive security and adversarial test suite (73 test cases)
+# Run all native Rust unit and integration security tests
+cargo test --all
+
+# Run the standalone Rust CLI KAT diagnostics
+cargo run --release --bin mirage -- test
+```
+
+### 2. Standalone Rust CLI Quickstart
+```bash
+# Build release binary
+cargo build --release
+
+# Encrypt a file (default: Mirage-C4 v2 non-linear cascade)
+./target/release/mirage encrypt secret.pdf --password "YourStrongPassword123!#"
+
+# Decrypt a .wraith file
+./target/release/mirage decrypt secret.wraith --password "YourStrongPassword123!#"
+```
+
+### 3. Web Development Test Suite
+```bash
+# Run security test suite
 npm test
 
-# 2. Run Known Answer Tests (KATs) against published standard test vectors (RFC 8439, 5794, 3713, 5869, 7914, NIST SP 800-38A/D)
+# Run KAT checks
 npm run test:kat
 ```
 
-All test suites should complete with 100% passing results (`Resultado: 73 correctas, 0 fallidas, 73 totales` and `overall: true`).
+All test suites should complete with 100% passing results.
 
 ---
 

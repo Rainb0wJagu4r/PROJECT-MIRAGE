@@ -15,3 +15,4 @@ INSTRUCCIONES.md
 *.share3
 MIRAGE_TOKEN
 emergency-audit.log
+target/
