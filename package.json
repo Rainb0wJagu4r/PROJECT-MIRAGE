@@ -5,9 +5,7 @@
   "type": "module",
   "main": "main.js",
   "scripts": {
-    "predev": "node scripts/check-updates.js",
-    "preapp:dev": "node scripts/check-updates.js",
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "concurrently -n \"API,WEB\" -c \"magenta,cyan\" \"npm run server --silent\" \"npm run client --silent\"",
     "client": "vite",
     "server": "node server.js",
     "build": "vite build",

@@ -78,7 +78,6 @@ try {
       token: '',
       _note: 'Obsoleto. El token ya no se escribe en disco (MIRAGE-012). Se entrega por IPC.',
     }, null, 2));
-    console.log('[Security] src/token.json heredado neutralizado (ya no se usa).');
   }
 } catch { /* no es crítico */ }
 
@@ -2038,36 +2037,18 @@ function startServer(port = PORT) {
         serverInstance.listen(port, () => {
           console.log(`========================================`);
           console.log(`Project Mirage Local API Server online (HTTPS)!`);
-          console.log(`Listening on https://localhost:${port}`);
-          console.log(`Platform UUID: ${getHardwareUUID()}`);
-          // MIRAGE-016: aqui se anunciaba 'Post-Quantum Cryptography: Enabled'.
-          // Era FALSO: el cifrado de archivos no usa ningun KEM post-cuantico.
-          // Mirage-C4 v2 = Camellia-CBC + ARIA-CBC + ChaCha20 + AES-GCM con
-          // claves de 256 bits derivadas por scrypt+HKDF. Frente a Grover eso
-          // es ~128 bits de margen, igual que AES-256. NO es 1024 bits ni PQC.
-          console.log(`Cifrado de archivos: Mirage-C4 v2 (cascada no lineal, claves de 256 bits)`);
-          console.log(`Post-cuantica: NO implementada para el cifrado de archivos.`);
-          console.log(`========================================`);
+          console.log(`[API Engine] Ready on https://localhost:${port}`);
           resolve(serverInstance);
         });
       } else {
         serverInstance = app.listen(port, () => {
-          console.log(`========================================`);
-          console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
-          console.log(`Listening on http://localhost:${port}`);
-          console.log(`Platform UUID: ${getHardwareUUID()}`);
-          console.log(`========================================`);
+          console.log(`[API Engine] Ready on http://localhost:${port}`);
           resolve(serverInstance);
         });
       }
     } catch (err) {
-      console.error('Failed to start HTTPS server, falling back to HTTP:', err);
       serverInstance = app.listen(port, () => {
-        console.log(`========================================`);
-        console.log(`Project Mirage Local API Server online (HTTP Fallback)!`);
-        console.log(`Listening on http://localhost:${port}`);
-        console.log(`Platform UUID: ${getHardwareUUID()}`);
-        console.log(`========================================`);
+        console.log(`[API Engine] Ready on http://localhost:${port}`);
         resolve(serverInstance);
       });
     }
