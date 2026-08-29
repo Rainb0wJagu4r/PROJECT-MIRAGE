@@ -237,9 +237,7 @@ fn main() {
             println!("{}", "🔓  PROJECT MIRAGE — DESCIFRADO DE ARCHIVOS".bright_cyan().bold());
             println!("{}", "--------------------------------------------------------".dimmed());
 
-            let mut raw_data = Vec::new();
-
-            if files.len() > 1 || files[0].extension().map_or(false, |ext| ext == "share") {
+            let raw_data = if files.len() > 1 || files[0].extension().map_or(false, |ext| ext == "share") {
                 println!("🧩 Recomponiendo {} fragmentos de Shamir...", files.len());
                 let mut share_buffers = Vec::new();
                 for f in &files {
@@ -252,22 +250,22 @@ fn main() {
                     }
                 }
                 let share_slices: Vec<&[u8]> = share_buffers.iter().map(|b| b.as_slice()).collect();
-                raw_data = match combine_shares(&share_slices) {
+                match combine_shares(&share_slices) {
                     Ok(data) => data,
                     Err(e) => {
                         eprintln!("{}: {}", "Error al reconstruir fragmentos".red().bold(), e.public_message());
                         std::process::exit(1);
                     }
-                };
+                }
             } else {
-                raw_data = match fs::read(&files[0]) {
+                match fs::read(&files[0]) {
                     Ok(b) => b,
                     Err(e) => {
                         eprintln!("{}: No se pudo leer el archivo: {e}", "Error".red().bold());
                         std::process::exit(1);
                     }
-                };
-            }
+                }
+            };
 
             // Extract from carrier if steg
             let (envelope, was_steg) = extract_from_carrier(&raw_data).unwrap_or((raw_data, false));

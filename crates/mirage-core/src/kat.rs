@@ -4,7 +4,7 @@ use aria::Aria256;
 use camellia::Camellia256;
 use cbc::cipher::block_padding::NoPadding;
 use cbc::cipher::{BlockEncryptMut, KeyIvInit as CbcKeyIvInit};
-use chacha20::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
+use chacha20::cipher::{StreamCipher, StreamCipherSeek};
 use chacha20::ChaCha20;
 use hkdf::Hkdf;
 use scrypt::{scrypt, Params};

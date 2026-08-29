@@ -6,7 +6,7 @@ use aria::Aria256;
 use camellia::Camellia256;
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit as CbcKeyIvInit};
-use chacha20::cipher::{KeyIvInit, StreamCipher};
+use chacha20::cipher::StreamCipher;
 use chacha20::ChaCha20;
 use rand::RngCore;
 use zeroize::Zeroize;

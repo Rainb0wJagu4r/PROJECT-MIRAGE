@@ -136,14 +136,13 @@ pub fn split_secret(secret: &[u8], threshold: u8, total: u8) -> Result<Vec<Vec<u
 struct ParsedShare<'a> {
     index: u8,
     threshold: u8,
-    total: u8,
     secret_len: usize,
     header: &'a [u8],
     mac: &'a [u8],
     share: &'a [u8],
 }
 
-fn parse_share(buf: &[u8]) -> Result<ParsedShare, MirageError> {
+fn parse_share(buf: &[u8]) -> Result<ParsedShare<'_>, MirageError> {
     if buf.len() < SHARE_HEADER_LEN + HMAC_LEN + 1 {
         return Err(MirageError::opaque("shamir: fragmento demasiado corto"));
     }
@@ -183,7 +182,6 @@ fn parse_share(buf: &[u8]) -> Result<ParsedShare, MirageError> {
     Ok(ParsedShare {
         index,
         threshold,
-        total,
         secret_len,
         header,
         mac,
