@@ -1,4 +1,6 @@
 {
-  "plaintext_sac": 0.001,
-  "key_sac": 50.014
+  "plaintext_sac": 21.524,
+  "key_sac": 50,
+  "cascade_version": 2,
+  "note": "plaintext_sac ~25% es lo esperado con capas CBC (propagacion solo hacia adelante). En la cascada v1 daba 0.001%, huella de MIRAGE-002 (colapso a un solo XOR). El SAC es una propiedad estructural, NO evidencia de seguridad criptografica."
 }

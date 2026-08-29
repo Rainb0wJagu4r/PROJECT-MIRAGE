@@ -6,7 +6,14 @@ Project Mirage is a secure, desktop-grade local web application for symmetric fi
 > **Project Origin & Active Development Status**
 > - 🇲🇽 **Born in Mexico:** This project is proud to be born in Mexico.
 > - **In Development:** The software is still under active development and should be treated as experimental.
-> - **NIST SP 800-22 Audited:** The randomness and entropy of our `.wraith` encrypted archives have been audited using the NIST SP 800-22 statistical suite. The full analysis codebase and official audit reports are published here: [PROJECT-MIRAGE-NIST-Analyze-results](https://github.com/Rainb0wJagu4r/PROJECT-MIRAGE-NIST-Analyze-results).
+> - **Statistical tests (NIST SP 800-22):** the output of `.wraith` archives passes
+>   the SP 800-22 suite: [PROJECT-MIRAGE-NIST-Analyze-results](https://github.com/Rainb0wJagu4r/PROJECT-MIRAGE-NIST-Analyze-results).
+>   **Read this carefully:** SP 800-22 measures whether output *looks* random. It is
+>   **not** evidence of cryptographic security. Proof: the v1 cascade passed these
+>   tests while collapsing to a single XOR and being trivially breakable
+>   (see [`DEPRECATED.md`](DEPRECATED.md)). Passing is a *necessary* condition, never a sufficient one.
+> - **Round-3 security review (2026):** 18 findings, all empirically confirmed; 13 fixed.
+>   See [Known limitations](#known-limitations) and [`DEPRECATED.md`](DEPRECATED.md).
 > - **Open to Audits:** This project is open to public security audits and code reviews. We highly appreciate any feedback, contributions, or advice to help us continue learning and working on secure cryptographic applications.
 
 ---
@@ -15,19 +22,24 @@ Project Mirage is a secure, desktop-grade local web application for symmetric fi
 
 - **Armored Cryptography**: Uses Node's native cryptographic library with 128-bit authentication tags to ensure absolute file integrity and detect physical or logical tampering.
 - **AES-256-GCM Encryption**: High-speed symmetric authenticated encryption standard.
-- **Mirage-C4 Cascade Cipher**: A 4-layer cryptographic cascade (4×256-bit) chaining Camellia-256-CTR, ARIA-256-CTR, ChaCha20, and AES-256-GCM with individual scrypt key derivations.
+- **Mirage-C4 cascade (v2)**: 4 layers — Camellia-256-**CBC** → ChaCha20 → ARIA-256-**CBC**
+  → AES-256-GCM. Subkeys derived via scrypt + HKDF with domain separation.
+  The first two layers are CBC on purpose: in v1 all four layers were stream ciphers,
+  so the cascade collapsed to `P xor KS`.
+  **Real benefit:** defence in depth if one of the four ciphers is broken in the future.
+  **It does not add up key sizes: security is ~256 bits (~128 vs Grover), the same as AES-256.**
 - **Bilingual Interface**: Toggles dynamically between English and Spanish.
 - **Theme Controls**: Boots in Dark Mode with a high-fidelity toggle to Light Mode.
 - **Real-time SHA3-256 Verification**: Instantly calculates and displays the SHA3-256 hash of selected local files before encryption and verifies hashes upon restoration.
 - **Metadata Scrubbing**: Detects and strips tracking metadata tags from files prior to encryption:
   - **JPEG**: APP1 marker (GPS coordinates, camera model, author data).
   - **PNG**: Auxiliary text and timestamp chunks (tEXt, zTXt, iTXt, eXIf, tIME, pHYs).
-- **Size Obfuscation**: Appends random bytes (exponential distribution up to 5MB) to hide the original file size.
+- **Size obfuscation (Padmé)**: length quantization with bounded ~12% overhead (Nikitin et al., PETS 2019; used by Signal/PURBs). It **reduces** the size leak, it does not eliminate it.
 - **Hardware-Locked KDF**: Binds file decryption to the host hardware platform UUID (using system queries or cryptographic registry keys). The archive cannot be decrypted on other machines.
-- **Time-To-Live (TTL)**: Embeds an expiration timestamp in the header. Once expired, the file refuses to decrypt and self-destructs.
+- **Time-To-Live (TTL)**: embeds an expiration timestamp. Checked before returning or writing any data. **It is not a cryptographic control** — see [Known limitations](#known-limitations).
 - **Duress Mode**: Supports decoy passwords that restore a mock warning document instead of the confidential payload.
-- **2-of-3 split fragmentation**: Encrypts and splits the archive into three parts. Any two components are sufficient to reconstruct the file.
-- **Secure Shredder**: Overwrites source files in multiple random passes and physical sector flushes before unlinking.
+- **2-of-3 fragmentation (Shamir)**: real Shamir Secret Sharing over GF(2^8) with per-share HMAC. Any two shares reconstruct the file; a single share reveals **nothing** (information-theoretic). In v1 this was XOR parity and share 1 leaked the header in the clear.
+- **Secure shredder**: multiple random overwrite passes before unlinking. **No guarantee on SSD/NVMe, copy-on-write filesystems, or with snapshots** — see [Known limitations](#known-limitations).
 - **Carrier Appending (Encapsulation)**: Invisibly appends the encrypted payload to the end of a carrier image (PNG/JPEG) so it remains 100% viewable without revealing the payload.
 
 ---
@@ -153,3 +165,64 @@ To verify the cryptographic primitives and KDF routines, run the automated test 
 node test-crypto.js
 ```
 All tests should return `PASS`.
+
+---
+
+## Known limitations
+
+Honest list of what this project does **not** protect against. If you rely on
+Mirage for something that matters, read this section before the feature list.
+
+### Not a cryptographic control
+
+| Feature | What it actually does | What it does **not** do |
+|---|---|---|
+| **TTL / expiration** | The reference client refuses to decrypt after the date. | Does not stop anyone. The timestamp is inside the authenticated payload, so whoever holds the file **and the password** can read it with another client, or by moving the system clock. Treat it as a hint, never as a guarantee. |
+| **Duress mode** | Two independent blocks; the decoy password opens harmless content. | Does not hide *that a second block exists*. The file size and structure reveal there are two blocks. It resists a casual look, **not** forensic analysis by someone who knows the format. |
+| **Secure shredder** | Overwrites the file in place with random passes. | **No guarantee on SSD/NVMe** (wear levelling relocates blocks), on copy-on-write filesystems (Btrfs, ZFS, APFS), with snapshots, journals, backups, or `Volume Shadow Copy` on Windows. Full-disk encryption is a better answer for this. |
+| **Steganography (PNG/JPEG)** | Appends the payload after the end of the carrier image. | **This is not steganography.** The data is trivially detectable by anyone who looks past the image's end marker. It hides from a casual viewer, not from analysis. |
+| **Hardware lock** | Binds decryption to the machine's UUID. | If you change machine, motherboard, or reinstall, **you lose access permanently.** Do not use it for archives you need to move. |
+
+### Bounded, not eliminated
+
+- **Size leak (Padmé).** Quantization limits overhead to ~12% and lumps files
+  into buckets, but the bucket itself is public. Two very different files land
+  in the same bucket; a 4 KB file and a 4 GB file do not.
+- **Password strength.** The heuristic estimates entropy and rejects weak
+  input, but it accepts things like `Password123!` (it has length, mixed case,
+  digits and a symbol). Entropy estimation on human passwords is an
+  approximation, not a measurement. **Use a passphrase from a password manager.**
+- **Key zeroization.** `lib/kdf.js` wipes intermediate `Buffer`s, but
+  **JavaScript strings are immutable**: the password itself cannot be reliably
+  erased from memory. A memory dump or swap file may retain it. This is a
+  limitation of the runtime, not something the code can fix.
+- **Timing.** Error handling is uniform and token comparison is
+  constant-time, but no formal timing analysis has been done under load.
+
+### Not addressed yet
+
+- **The API token is baked into the committed frontend bundle**
+  (`dist/assets/*.js`). It is a `localhost` token, so exploiting it requires
+  local access to your machine, but it is identical in every clone.
+  Fix requires Electron IPC (`contextBridge`). Tracked as MIRAGE-012.
+
+### What the tests do and do not prove
+
+```bash
+npm test           # 73 adversarial cases
+npm run test:kat   # 11 published vectors (RFC 8439, 5794, 3713, 5869, 7914, NIST SP 800-38A/D)
+node avalanche_test.js
+```
+
+All of them passing means **known regressions have not come back** and the
+primitives are invoked correctly. It does **not** mean the system is secure.
+No amount of passing tests proves the absence of flaws — the v1 cascade passed
+statistical tests while being trivially breakable.
+
+**This project has not been audited by a professional cryptography firm.** It
+is a self-designed construction, and self-designed cryptography carries risk
+regardless of how carefully it is written. For protecting information whose
+disclosure would cause you serious harm, prefer audited, widely reviewed tools
+(age, GnuPG, VeraCrypt).
+
+Reports and reviews are welcome — that is why this section exists.

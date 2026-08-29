@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { encryptMirageC4 } from './server.js';
+import { encryptCascade, generateIvs } from './lib/cascade.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,18 +36,21 @@ function runAvalancheAnalysis(runs = 100) {
   // Setup baseline variables
   const payloadSize = 10000; // 10KB message (80,000 bits)
   const P = crypto.randomBytes(payloadSize);
-  const K = crypto.randomBytes(128); // 128-byte key (1024 bits)
-  
-  const ivs = {
-    ivCamellia: crypto.randomBytes(16),
-    ivAria: crypto.randomBytes(16),
-    ivChaCha: crypto.randomBytes(16),
-    ivAes: crypto.randomBytes(12)
+
+  // NOTA (MIRAGE-016): antes se usaba una clave de 128 bytes y se describia
+  // como "1024 bits". Eso era enganoso. La cascada v2 deriva 4 subclaves de
+  // 256 bits por HKDF a partir de un PRK de 32 bytes. La seguridad NO es de
+  // 1024 bits: es del orden de 256 (~128 frente a Grover), igual que AES-256.
+  const K = crypto.randomBytes(32); // PRK de 256 bits
+  const salt = crypto.randomBytes(16);
+  const ivs = generateIvs();
+  const aadCtx = {
+    magic: 'MIRG', version: 2, mode: 0x11, flags: 0,
+    blockIndex: 0, blockCount: 1
   };
-  const header = Buffer.from('MIRAGE\x01\x03', 'binary');
-  
+
   // 1. Baseline ciphertext
-  const { ciphertext: C } = encryptMirageC4(P, K, ivs, header);
+  const { ciphertext: C } = encryptCascade(P, K, salt, ivs, aadCtx);
   const totalBits = C.length * 8;
   
   let totalPlaintextDist = 0;
@@ -58,13 +61,13 @@ function runAvalancheAnalysis(runs = 100) {
     // A. Plaintext Avalanche (Plaintext SAC)
     // Flip 1 random bit in original plaintext P
     const P_prime = flipRandomBit(P);
-    const { ciphertext: C_prime } = encryptMirageC4(P_prime, K, ivs, header);
+    const { ciphertext: C_prime } = encryptCascade(P_prime, K, salt, ivs, aadCtx);
     totalPlaintextDist += hammingDistance(C, C_prime);
     
     // B. Key Avalanche (Key SAC)
     // Flip 1 random bit in key K
     const K_prime = flipRandomBit(K);
-    const { ciphertext: C_double_prime } = encryptMirageC4(P, K_prime, ivs, header);
+    const { ciphertext: C_double_prime } = encryptCascade(P, K_prime, salt, ivs, aadCtx);
     totalKeyDist += hammingDistance(C, C_double_prime);
   }
   
@@ -74,9 +77,34 @@ function runAvalancheAnalysis(runs = 100) {
   console.log(`Plaintext SAC (Strict Avalanche Criterion): ${avgPlaintextSac.toFixed(3)}%`);
   console.log(`Key SAC (Strict Avalanche Criterion): ${avgKeySac.toFixed(3)}%`);
   
+  // ---------------------------------------------------------------------
+  // INTERPRETACION HONESTA DE ESTAS CIFRAS (leer antes de citarlas)
+  //
+  // El SAC de plaintext delata la linealidad de la cascada. Medido sobre la
+  // cascada v1 (todo cifrados de flujo) daba 0.001%: al voltear un bit del
+  // plaintext solo cambiaba ESE bit del ciphertext, porque la composicion se
+  // reducia a P xor KS. Esa cifra era la huella de MIRAGE-002.
+  //
+  // La cascada v2 (Camellia-CBC + ChaCha20 + ARIA-CBC + AES-GCM) da ~25%
+  // sobre el ciphertext COMPLETO. No es 50% por una razon estructural, no por
+  // un defecto: CBC propaga los cambios solo hacia ADELANTE, asi que un bit
+  // volteado en la posicion i altera de i al final y deja intacto el prefijo.
+  // Un bit al azar cae de media a la mitad del mensaje -> ~50% de los bits
+  // afectados x ~50% de cambio = ~25%. Es el comportamiento esperado.
+  //
+  // El SAC de clave si debe ser ~50% (aqui: 50.0%), porque una subclave
+  // distinta cambia el cifrado entero desde el primer bloque.
+  //
+  // LIMITE DE ESTA PRUEBA: el SAC es una propiedad ESTRUCTURAL, no una
+  // demostracion de seguridad. La cascada v1 pasaba tests estadisticos
+  // mientras era trivialmente rompible. Un SAC bueno no descarta fallos; un
+  // SAC malo (como el 0.001%) si es prueba de que algo esta roto.
+  // ---------------------------------------------------------------------
   const results = {
     plaintext_sac: parseFloat(avgPlaintextSac.toFixed(3)),
-    key_sac: parseFloat(avgKeySac.toFixed(3))
+    key_sac: parseFloat(avgKeySac.toFixed(3)),
+    cascade_version: 2,
+    note: 'plaintext_sac ~25% es lo esperado con capas CBC (propagacion solo hacia adelante). En la cascada v1 daba 0.001%, huella de MIRAGE-002 (colapso a un solo XOR). El SAC es una propiedad estructural, NO evidencia de seguridad criptografica.'
   };
   
   const outputPath = path.join(__dirname, 'avalanche_results.json');
