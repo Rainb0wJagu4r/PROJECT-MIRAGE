@@ -27,7 +27,14 @@ export const api = {
       memory: { rss: 0, heapUsed: 0 },
       version: '1.0.0',
       upToDate: true,
-      selfTests: { overall: true, results: [] }
+      selfTests: {
+        overall: true,
+        aesGcm: true,
+        camelliaCtr: true,
+        ariaCtr: true,
+        chacha20: true,
+        scrypt: true
+      }
     };
   },
 

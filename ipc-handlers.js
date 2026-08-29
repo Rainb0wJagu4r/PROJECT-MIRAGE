@@ -266,6 +266,17 @@ export function registerIpcHandlers() {
   // 2. System Status & KAT Primitives Monitor
   ipcMain.handle('mirage:system-status', async () => {
     const memoryUsage = process.memoryUsage();
+    const katSummary = summarizeKats();
+    const testsMap = {};
+    if (katSummary && katSummary.tests) {
+      katSummary.tests.forEach(t => {
+        if (t.name.includes('AES-256-GCM')) testsMap.aesGcm = t.passed;
+        if (t.name.includes('Camellia')) testsMap.camelliaCtr = t.passed;
+        if (t.name.includes('ARIA')) testsMap.ariaCtr = t.passed;
+        if (t.name.includes('ChaCha20')) testsMap.chacha20 = t.passed;
+        if (t.name.includes('scrypt')) testsMap.scrypt = t.passed;
+      });
+    }
     return {
       status: 'online',
       uptime: Math.floor(process.uptime()),
@@ -275,7 +286,15 @@ export function registerIpcHandlers() {
       },
       version: '1.0.0',
       upToDate: true,
-      selfTests: summarizeKats()
+      selfTests: {
+        overall: katSummary.overall,
+        aesGcm: testsMap.aesGcm ?? katSummary.overall,
+        camelliaCtr: testsMap.camelliaCtr ?? katSummary.overall,
+        ariaCtr: testsMap.ariaCtr ?? katSummary.overall,
+        chacha20: testsMap.chacha20 ?? katSummary.overall,
+        scrypt: testsMap.scrypt ?? katSummary.overall,
+        raw: katSummary
+      }
     };
   });
 
