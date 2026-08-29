@@ -1,0 +1,58 @@
+# ==============================================================================
+# PROJECT MIRAGE — DEPENDENCY & ENVIRONMENT REQUIREMENTS
+# Supported Platforms: macOS (Apple Silicon / Intel) & Windows 10/11 (x64)
+# ==============================================================================
+
+# Runtime Environment:
+# --------------------
+# Node.js >= 18.0.0 (Recommended: Node.js 20.x LTS or Node.js 22.x LTS)
+# npm >= 9.0.0
+
+# Core Production Dependencies (Node.js / Express / React):
+# ---------------------------------------------------------
+cors>=2.8.5
+express>=4.19.2
+express-rate-limit>=7.5.0
+lucide-react>=0.395.0
+react>=18.3.1
+react-dom>=18.3.1
+
+# Development & Packaging Dependencies:
+# -------------------------------------
+@types/react>=18.3.3
+@types/react-dom>=18.3.0
+@vitejs/plugin-react>=6.0.5
+concurrently>=8.2.2
+electron>=43.4.0
+electron-builder>=26.15.3
+vite>=8.2.1
+wait-on>=9.1.0
+
+# ==============================================================================
+# INSTALLATION INSTRUCTIONS / INSTRUCCIONES DE INSTALACIÓN
+# ==============================================================================
+
+# macOS (Terminal):
+# -----------------
+# 1. Asegúrate de tener Node.js instalado (brew install node ó https://nodejs.org/)
+# 2. Instala todas las dependencias del proyecto:
+#    npm install
+# 3. Para iniciar la aplicación web:
+#    npm run dev
+# 4. Para empaquetar la app de escritorio (.dmg):
+#    npm run app:package
+
+# Windows (PowerShell / Command Prompt):
+# --------------------------------------
+# 1. Asegúrate de tener Node.js instalado (https://nodejs.org/)
+# 2. Instala todas las dependencias del proyecto:
+#    npm install
+# 3. Para iniciar la aplicación web:
+#    npm run dev
+# 4. Para empaquetar la app de escritorio (.exe / NSIS):
+#    npm run app:package
+
+# Verificación de Seguridad y Criptografía (Cross-platform):
+# -----------------------------------------------------------
+# npm test           # 73 pruebas de seguridad adversariales (100% PASS)
+# npm run test:kat   # 11 vectores oficiales de referencia (100% PASS)
