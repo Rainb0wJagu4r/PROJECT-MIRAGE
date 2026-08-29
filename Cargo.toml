@@ -4,6 +4,7 @@ members = [
     "crates/mirage-core",
     "crates/mirage-cli",
     "crates/mirage-gui",
+    "src-tauri",
 ]
 default-members = ["crates/mirage-gui"]
 

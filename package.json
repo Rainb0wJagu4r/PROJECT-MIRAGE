@@ -6,6 +6,9 @@
   "main": "main.js",
   "scripts": {
     "start": "cargo run --release",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "dev": "concurrently -n \"API,WEB\" -c \"magenta,cyan\" \"npm run server --silent\" \"npm run client --silent\"",
     "client": "vite",
     "server": "node server.js",
@@ -26,6 +29,8 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^6.0.5",
