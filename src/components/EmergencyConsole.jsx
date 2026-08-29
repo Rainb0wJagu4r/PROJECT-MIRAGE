@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { 
   Shield, 
   ShieldAlert, 
@@ -22,7 +22,7 @@ import {
   Square,
   HardDrive
 } from 'lucide-react';
-import tokenData from '../token.json';
+import api from '../api';
 
 const consoleTrans = {
   es: {
@@ -159,23 +159,15 @@ export default function EmergencyConsole({
     setIsScanning(true);
     setErrorMessage('');
     try {
-      const response = await fetch('/api/emergency/scan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': tokenData.token
-        },
-        body: JSON.stringify({
-          targetPaths: config.targetPaths || [],
-          exclusions: config.exclusions || []
-        })
+      const data = await api.scanEmergency({
+        targetPaths: config.targetPaths || [],
+        exclusions: config.exclusions || []
       });
-      const data = await response.json();
-      if (data.success) {
+      if (data && data.success) {
         setScanData(data);
         setShowPreviewModal(true);
       } else {
-        setErrorMessage(data.error);
+        setErrorMessage(data?.error || 'Scan failed');
       }
     } catch (err) {
       setErrorMessage(err.message);
@@ -196,22 +188,14 @@ export default function EmergencyConsole({
     if (!scanData) {
       setIsScanning(true);
       try {
-        const response = await fetch('/api/emergency/scan', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Token': tokenData.token
-          },
-          body: JSON.stringify({
-            targetPaths: config.targetPaths || [],
-            exclusions: config.exclusions || []
-          })
+        const data = await api.scanEmergency({
+          targetPaths: config.targetPaths || [],
+          exclusions: config.exclusions || []
         });
-        const data = await response.json();
-        if (data.success) {
+        if (data && data.success) {
           setScanData(data);
         } else {
-          setErrorMessage(data.error);
+          setErrorMessage(data?.error || 'Scan failed');
           setIsScanning(false);
           return;
         }
@@ -237,40 +221,32 @@ export default function EmergencyConsole({
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/emergency/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': tokenData.token
-        },
-        body: JSON.stringify({
-          password,
-          doubleFactorPassword: doubleFactorPassword || '',
-          targetPaths: config.targetPaths || [],
-          exclusions: config.exclusions || [],
-          algorithm: config.algorithm || 'mirage-c4',
-          outputPath: config.outputPath,
-          backupEnabled: config.backupEnabled !== false,
-          backupPath: config.backupPath,
-          shredOriginalEnabled: !!config.shredOriginalEnabled,
-          shredPasses: config.shredPasses || '3',
-          hardwareLockEnabled: !!config.hardwareLockEnabled,
-          metadataScrubEnabled: config.metadataScrubEnabled !== false,
-          sizeObfuscationEnabled: config.sizeObfuscationEnabled !== false,
-          ttlEnabled: !!config.ttlEnabled,
-          ttlValue: config.ttlValue || '0',
-          confirmationKeyword: confirmKeyword
-        })
+      const data = await api.executeEmergency({
+        password,
+        secondFactor: doubleFactorPassword || '',
+        targets: config.targetPaths || [],
+        exclusions: config.exclusions || [],
+        algorithm: config.algorithm || 'mirage-c4',
+        outputPath: config.outputPath,
+        backupEnabled: config.backupEnabled !== false,
+        backupPath: config.backupPath,
+        shredAfter: !!config.shredOriginalEnabled,
+        shredPasses: config.shredPasses || 3,
+        hardwareLock: !!config.hardwareLockEnabled,
+        metadataScrubEnabled: config.metadataScrubEnabled !== false,
+        sizeObfuscationEnabled: config.sizeObfuscationEnabled !== false,
+        ttlEnabled: !!config.ttlEnabled,
+        ttlValue: config.ttlValue || '0',
+        confirmationKeyword: confirmKeyword
       });
 
-      const data = await response.json();
-      if (data.steps) {
+      if (data && data.steps) {
         setExecLogs(data.steps);
       }
-      if (data.success) {
+      if (data && data.success) {
         setExecResult(data);
       } else {
-        setErrorMessage(data.error || 'Emergency operation failed');
+        setErrorMessage(data?.error || 'Emergency operation failed');
       }
     } catch (err) {
       setErrorMessage(err.message);

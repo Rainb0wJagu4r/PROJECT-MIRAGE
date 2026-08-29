@@ -12,7 +12,9 @@ import {
 } from 'lucide-react';
 import Dropzone from './Dropzone';
 import PathInput from './PathInput';
-export default function StegoConsole({ token, t, lang, onBack, onStartProcessing, onFinishProcessing, onProcessingStep }) {
+import api from '../api';
+
+export default function StegoConsole({ t, lang, onBack, onStartProcessing, onFinishProcessing, onProcessingStep }) {
   const [activeTab, setActiveTab] = useState('hide'); // 'hide' or 'reveal'
   
   // Hide form state
@@ -49,7 +51,7 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
     onStartProcessing(lang === 'es' ? 'EJECUTANDO OCULTACIÓN ESTEGANOGRÁFICA...' : 'EXECUTING STEGANOGRAPHIC CONCEALMENT...');
     
     try {
-      let response;
+      let data;
       const settingsPayload = {
         password: hidePassword,
         doubleFactorPassword: hideDfPassword,
@@ -71,41 +73,25 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
 
       if (hideFile) {
         onProcessingStep({ msg: lang === 'es' ? `Cargando archivo ${hideFile.name}...` : `Loading file ${hideFile.name}...`, success: true });
-        
-        const headers = {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(hideFile.name),
-          'X-Settings': JSON.stringify(settingsPayload),
-          'X-API-Token': token
-        };
-
-        response = await fetch('/api/encrypt', {
-          method: 'POST',
-          headers,
-          body: hideFile
+        const buffer = await hideFile.arrayBuffer();
+        data = await api.encrypt({
+          fileBuffer: buffer,
+          fileName: hideFile.name,
+          settings: settingsPayload
         });
       } else {
         if (!hideLocalPath) {
           throw new Error(lang === 'es' ? 'Debes seleccionar un archivo a cifrar.' : 'You must select a file to encrypt.');
         }
         onProcessingStep({ msg: lang === 'es' ? `Cargando archivo local ${hideLocalPath}...` : `Loading local file ${hideLocalPath}...`, success: true });
-        
-        response = await fetch('/api/encrypt', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Token': token
-          },
-          body: JSON.stringify({
-            filePath: hideLocalPath,
-            settings: settingsPayload
-          })
+        data = await api.encrypt({
+          filePath: hideLocalPath,
+          settings: settingsPayload
         });
       }
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Steganography concealment failed.');
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Steganography concealment failed.');
       }
 
       onProcessingStep({ msg: lang === 'es' ? 'Escritura esteganográfica completada exitosamente.' : 'Steganographic write completed successfully.', success: true });
@@ -131,47 +117,33 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
     onStartProcessing(lang === 'es' ? 'EXTRAYENDO Y DESCIFRANDO PAYLOAD...' : 'EXTRACTING AND DECRYPTING PAYLOAD...');
 
     try {
-      let response;
+      let data;
       const payload = {
         password: revealPassword,
         doubleFactorPassword: '',
-        restorePath: revealOutputPath
+        outputPath: revealOutputPath
       };
 
       if (revealFile) {
         onProcessingStep({ msg: lang === 'es' ? `Cargando archivo de imagen ${revealFile.name}...` : `Loading image file ${revealFile.name}...`, success: true });
-        
-        response = await fetch('/api/decrypt', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Settings': JSON.stringify(payload),
-            'X-API-Token': token
-          },
-          body: revealFile
+        const buffer = await revealFile.arrayBuffer();
+        data = await api.decrypt({
+          fileBuffer: buffer,
+          ...payload
         });
       } else {
         if (!revealLocalPath) {
           throw new Error(lang === 'es' ? 'Debes seleccionar la imagen portadora.' : 'You must select the carrier image file.');
         }
         onProcessingStep({ msg: lang === 'es' ? `Cargando archivo local ${revealLocalPath}...` : `Loading local file ${revealLocalPath}...`, success: true });
-
-        response = await fetch('/api/decrypt', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Token': token
-          },
-          body: JSON.stringify({
-            filePath: revealLocalPath,
-            ...payload
-          })
+        data = await api.decrypt({
+          filePath: revealLocalPath,
+          ...payload
         });
       }
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Payload extraction failed.');
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Payload extraction failed.');
       }
 
       onProcessingStep({ msg: lang === 'es' ? 'Firma esteganográfica MIRGSTEG verificada.' : 'Steganographic MIRGSTEG signature verified.', success: true });
@@ -179,7 +151,7 @@ export default function StegoConsole({ token, t, lang, onBack, onStartProcessing
       setTimeout(() => {
         setResult({
           type: 'reveal',
-          outputPath: data.restorePath,
+          outputPath: data.outputPath,
           filename: data.filename,
           fileSize: data.fileSize,
           outputHash: data.outputHash,

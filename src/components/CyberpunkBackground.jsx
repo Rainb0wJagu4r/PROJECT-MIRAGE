@@ -3,30 +3,12 @@ import React, { useEffect, useState, useRef } from 'react';
 export default function CyberpunkBackground({ isDarkMode }) {
   const canvasRef = useRef(null);
   
-  // Geolocation state (defaulting to Mexico coordinates)
-  const [location, setLocation] = useState({
+  // Geolocation visual defaults (100% offline, zero network requests)
+  const [location] = useState({
     lat: 23.6345,
     lon: -102.5528,
-    country: 'MEXICO'
+    country: 'OFFLINE_NODE'
   });
-
-  // Fetch user location on mount
-  useEffect(() => {
-    fetch('https://ipapi.co/json/')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.latitude && data.longitude) {
-          setLocation({
-            lat: data.latitude,
-            lon: data.longitude,
-            country: (data.country_name || 'MEXICO').toUpperCase()
-          });
-        }
-      })
-      .catch(() => {
-        // Safe silent fallback to default Mexico coordinates
-      });
-  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;

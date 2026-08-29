@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Folder, File, HelpCircle } from 'lucide-react';
-import tokenData from '../token.json';
+import api from '../api';
 
 export default function PathInput({ 
   value, 
@@ -13,16 +13,13 @@ export default function PathInput({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const containerRef = useRef(null);
 
-  // Fetch suggestions from local Express API
+  // Fetch suggestions from native IPC
   useEffect(() => {
     if (!showSuggestions) return;
 
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/autocomplete?path=${encodeURIComponent(value || '')}`, {
-          headers: { 'X-API-Token': tokenData.token }
-        });
-        const data = await response.json();
+        const data = await api.autocomplete(value || '');
         if (data && data.items) {
           setSuggestions(data.items);
         } else {
@@ -48,7 +45,8 @@ export default function PathInput({
   }, []);
 
   const handleSuggestionClick = (item) => {
-    onChange(item.path + (item.isDirectory ? '/' : ''));
+    const chosenPath = item.fullPath || item.path;
+    onChange(chosenPath + (item.isDirectory ? '/' : ''));
     if (!item.isDirectory) {
       setShowSuggestions(false);
     }

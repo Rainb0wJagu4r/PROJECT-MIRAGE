@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Folder, 
   File, 
@@ -15,7 +15,7 @@ import {
   Search,
   FolderPlus
 } from 'lucide-react';
-import tokenData from '../token.json';
+import api from '../api';
 
 export default function DirectoryPickerModal({
   isOpen,
@@ -37,13 +37,10 @@ export default function DirectoryPickerModal({
   // Load shortcuts on mount
   useEffect(() => {
     if (!isOpen) return;
-    fetch('/api/system-shortcuts', {
-      headers: { 'X-API-Token': tokenData.token }
-    })
-      .then(res => res.json())
+    api.getShortcuts()
       .then(data => {
-        if (data.shortcuts) setShortcuts(data.shortcuts);
-        if (data.drives) setDrives(data.drives);
+        if (data && data.shortcuts) setShortcuts(data.shortcuts);
+        if (data && data.drives) setDrives(data.drives);
       })
       .catch(err => console.error('Failed to load shortcuts:', err));
   }, [isOpen]);
@@ -53,14 +50,8 @@ export default function DirectoryPickerModal({
     setIsLoading(true);
     setSelectedItem(null);
     try {
-      const url = targetPath 
-        ? `/api/browse-dir?path=${encodeURIComponent(targetPath)}`
-        : '/api/browse-dir';
-      const res = await fetch(url, {
-        headers: { 'X-API-Token': tokenData.token }
-      });
-      const data = await res.json();
-      if (data.currentPath) {
+      const data = await api.browseDir(targetPath);
+      if (data && data.currentPath) {
         setCurrentPath(data.currentPath);
         setParentPath(data.parentPath);
         setItems(data.items || []);

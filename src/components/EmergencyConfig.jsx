@@ -27,7 +27,7 @@ import {
   Check
 } from 'lucide-react';
 import PathInput from './PathInput';
-import tokenData from '../token.json';
+import api from '../api';
 
 const configTrans = {
   es: {
@@ -197,12 +197,9 @@ export default function EmergencyConfig({
   const [systemShortcuts, setSystemShortcuts] = useState([]);
 
   useEffect(() => {
-    fetch('/api/system-shortcuts', {
-      headers: { 'X-API-Token': tokenData.token }
-    })
-      .then(res => res.json())
+    api.getShortcuts()
       .then(data => {
-        if (data.shortcuts) setSystemShortcuts(data.shortcuts);
+        if (data && data.shortcuts) setSystemShortcuts(data.shortcuts);
       })
       .catch(e => {});
   }, []);
@@ -318,20 +315,12 @@ export default function EmergencyConfig({
     setIsSaving(true);
     setSaveStatus(null);
     try {
-      const response = await fetch('/api/emergency/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': tokenData.token
-        },
-        body: JSON.stringify({ config })
-      });
-      const data = await response.json();
-      if (data.success) {
+      const data = await api.saveEmergencyConfig(config);
+      if (data && data.success) {
         setSaveStatus({ type: 'success', msg: t.savedSuccess });
         setTimeout(() => setSaveStatus(null), 3500);
       } else {
-        setSaveStatus({ type: 'error', msg: `${t.errorSaving} ${data.error}` });
+        setSaveStatus({ type: 'error', msg: `${t.errorSaving} ${data?.error || ''}` });
       }
     } catch (err) {
       setSaveStatus({ type: 'error', msg: `${t.errorSaving} ${err.message}` });

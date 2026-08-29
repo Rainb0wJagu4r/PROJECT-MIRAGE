@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { 
   Archive, 
   Key, 
@@ -16,7 +16,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import PathInput from './PathInput';
-import tokenData from '../token.json';
+import api from '../api';
 
 const restoreTrans = {
   es: {
@@ -100,28 +100,20 @@ export default function EmergencyRestore({ lang = 'es' }) {
     setRestoreResult(null);
 
     try {
-      const response = await fetch('/api/emergency/restore', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': tokenData.token
-        },
-        body: JSON.stringify({
-          vaultPath,
-          password,
-          doubleFactorPassword: doubleFactorPassword || '',
-          restoreDir: restoreDir || ''
-        })
+      const data = await api.restoreEmergency({
+        vaultPath,
+        password,
+        secondFactor: doubleFactorPassword || '',
+        restoreLocation: restoreDir || ''
       });
 
-      const data = await response.json();
-      if (data.steps) {
+      if (data && data.steps) {
         setRestoreLogs(data.steps);
       }
-      if (data.success) {
+      if (data && data.success) {
         setRestoreResult(data);
       } else {
-        setErrorMessage(data.error || 'Restoration failed');
+        setErrorMessage(data?.error || 'Restoration failed');
       }
     } catch (err) {
       setErrorMessage(err.message);

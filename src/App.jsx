@@ -31,7 +31,7 @@ import PathInput from './components/PathInput';
 import ProcessingOverlay from './components/ProcessingOverlay';
 import CyberpunkBackground from './components/CyberpunkBackground';
 import StegoConsole from './components/StegoConsole';
-import tokenData from './token.json';
+import api from './api';
 
 // Translations Dictionary
 const translations = {
@@ -261,16 +261,6 @@ const translations = {
   }
 };
 
-// Get API token from URL query parameters (passed by Electron main process in production)
-// or fallback to the static token.json (for development hot-reloading)
-const getApiToken = () => {
-  const params = new URLSearchParams(window.location.search);
-  const urlToken = params.get('token');
-  if (urlToken) return urlToken;
-  return tokenData.token;
-};
-const token = getApiToken();
-
 export default function App() {
   // Theme & Language States
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -294,7 +284,7 @@ export default function App() {
   // System Info
   const [systemInfo, setSystemInfo] = useState(null);
   const [systemStatus, setSystemStatus] = useState({
-    status: 'connecting',
+    status: 'online',
     uptime: 0,
     memory: { rss: 0, heapUsed: 0 },
     version: '1.0.0',
@@ -303,13 +293,7 @@ export default function App() {
 
   // Load system info on startup
   useEffect(() => {
-    fetch('/api/system-info', {
-      headers: { 'X-API-Token': token }
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('System info fetch failed');
-        return res.json();
-      })
+    api.getSystemInfo()
       .then(data => {
         if (data && data.uuid) {
           setSystemInfo(data);
@@ -321,13 +305,7 @@ export default function App() {
   // Poll system status periodically
   useEffect(() => {
     const fetchStatus = () => {
-      fetch('/api/system-status', {
-        headers: { 'X-API-Token': token }
-      })
-        .then(res => {
-          if (!res.ok) throw new Error('System status fetch failed');
-          return res.json();
-        })
+      api.getSystemStatus()
         .then(data => {
           if (data && data.status) {
             setSystemStatus(data);
@@ -406,12 +384,9 @@ export default function App() {
     }
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/file-info?path=${encodeURIComponent(encLocalPath)}`, {
-          headers: { 'X-API-Token': token }
-        });
-        const data = await response.json();
-        if (data && data.exists && data.hash) {
-          setEncInputHash(data.hash);
+        const data = await api.getFileInfo(encLocalPath);
+        if (data && data.exists && data.sha3) {
+          setEncInputHash(data.sha3);
         } else {
           setEncInputHash('');
         }
@@ -430,12 +405,9 @@ export default function App() {
     }
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/file-info?path=${encodeURIComponent(decFilePath)}`, {
-          headers: { 'X-API-Token': token }
-        });
-        const data = await response.json();
-        if (data && data.exists && data.hash) {
-          setDecInputHash(data.hash);
+        const data = await api.getFileInfo(decFilePath);
+        if (data && data.exists && data.sha3) {
+          setDecInputHash(data.sha3);
         } else {
           setDecInputHash('');
         }
@@ -468,89 +440,52 @@ export default function App() {
     setIsProcessing(true);
 
     try {
-      let response;
-      
-      // Determine if uploading raw file or path reference
+      let data;
+      const settingsPayload = {
+        password: encPassword,
+        doubleFactorPassword: encDoubleFactorPassword,
+        hardwareLockEnabled: encSettings.hardwareLockEnabled,
+        metadataScrubEnabled: encSettings.metadataScrubEnabled,
+        sizeObfuscationEnabled: encSettings.sizeObfuscationEnabled,
+        ttlEnabled: encSettings.ttlEnabled,
+        ttlValue: encSettings.ttlValue,
+        duressEnabled: encSettings.duressEnabled,
+        duressPassword: encSettings.duressPassword,
+        duressDecoyPath: encSettings.duressDecoyPath,
+        splitFragmentEnabled: encSettings.splitFragmentEnabled,
+        shredOriginalEnabled: encSettings.shredOriginalEnabled,
+        shredPasses: encSettings.shredPasses,
+        outputPath: encOutputPath,
+        algorithm: encSettings.algorithm,
+        steganographyEnabled: encSettings.steganographyEnabled,
+        carrierPath: encSettings.carrierPath
+      };
+
       if (encFile) {
         setProcessingSteps([{ msg: `${t.statusPreparing} ${encFile.name}...`, success: true }]);
-        
-        const settingsPayload = {
-          password: encPassword,
-          doubleFactorPassword: encDoubleFactorPassword,
-          hardwareLockEnabled: encSettings.hardwareLockEnabled,
-          metadataScrubEnabled: encSettings.metadataScrubEnabled,
-          sizeObfuscationEnabled: encSettings.sizeObfuscationEnabled,
-          ttlEnabled: encSettings.ttlEnabled,
-          ttlValue: encSettings.ttlValue,
-          duressEnabled: encSettings.duressEnabled,
-          duressPassword: encSettings.duressPassword,
-          duressDecoyPath: encSettings.duressDecoyPath,
-          splitFragmentEnabled: encSettings.splitFragmentEnabled,
-          shredOriginalEnabled: false,
-          outputPath: encOutputPath,
-          algorithm: encSettings.algorithm,
-          steganographyEnabled: encSettings.steganographyEnabled,
-          carrierPath: encSettings.carrierPath
-        };
-
-        const headers = {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(encFile.name),
-          'X-Settings': JSON.stringify(settingsPayload),
-          'X-API-Token': token
-        };
-
-        response = await fetch('/api/encrypt', {
-          method: 'POST',
-          headers,
-          body: encFile
+        const buffer = await encFile.arrayBuffer();
+        data = await api.encrypt({
+          fileBuffer: buffer,
+          fileName: encFile.name,
+          settings: { ...settingsPayload, shredOriginalEnabled: false }
         });
       } else {
         if (!encLocalPath) {
           throw new Error(t.errorNoFile);
         }
-
         setProcessingSteps([{ msg: `${t.statusLoadingLocal} ${encLocalPath}...`, success: true }]);
-        
-        response = await fetch('/api/encrypt', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-API-Token': token
-          },
-          body: JSON.stringify({
-            filePath: encLocalPath,
-            settings: {
-              password: encPassword,
-              doubleFactorPassword: encDoubleFactorPassword,
-              hardwareLockEnabled: encSettings.hardwareLockEnabled,
-              metadataScrubEnabled: encSettings.metadataScrubEnabled,
-              sizeObfuscationEnabled: encSettings.sizeObfuscationEnabled,
-              ttlEnabled: encSettings.ttlEnabled,
-              ttlValue: encSettings.ttlValue,
-              duressEnabled: encSettings.duressEnabled,
-              duressPassword: encSettings.duressPassword,
-              duressDecoyPath: encSettings.duressDecoyPath,
-              splitFragmentEnabled: encSettings.splitFragmentEnabled,
-              shredOriginalEnabled: encSettings.shredOriginalEnabled,
-              shredPasses: encSettings.shredPasses,
-              outputPath: encOutputPath,
-              algorithm: encSettings.algorithm,
-              steganographyEnabled: encSettings.steganographyEnabled,
-              carrierPath: encSettings.carrierPath
-            }
-          })
+        data = await api.encrypt({
+          filePath: encLocalPath,
+          settings: settingsPayload
         });
       }
 
-      const data = await response.json();
-      
-      if (data.steps) {
+      if (data && data.steps) {
         setProcessingSteps(data.steps);
       }
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Crypto Fail');
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Crypto Fail');
       }
 
       // Success
@@ -586,10 +521,11 @@ export default function App() {
     setIsProcessing(true);
 
     try {
-      let payload = {
+      let data;
+      const basePayload = {
         password: decPassword,
         doubleFactorPassword: decDoubleFactorPassword,
-        restorePath: decRestorePath
+        outputPath: decRestorePath
       };
 
       if (decIsSplit) {
@@ -597,33 +533,28 @@ export default function App() {
         if (filteredParts.length < 2) {
           throw new Error(t.errorPartsCount);
         }
-        payload.partPaths = filteredParts;
         setProcessingSteps([{ msg: `${t.statusLoadingParts} ${filteredParts.join(', ')}...`, success: true }]);
+        data = await api.decrypt({
+          parts: filteredParts,
+          ...basePayload
+        });
       } else {
         if (!decFilePath) {
           throw new Error(t.errorNoDecFile);
         }
-        payload.filePath = decFilePath;
         setProcessingSteps([{ msg: `Loading encrypted file from: ${decFilePath}...`, success: true }]);
+        data = await api.decrypt({
+          filePath: decFilePath,
+          ...basePayload
+        });
       }
 
-      const response = await fetch('/api/decrypt', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-API-Token': token
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-      
-      if (data.steps) {
+      if (data && data.steps) {
         setProcessingSteps(data.steps);
       }
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Authentication failure.');
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Authentication failure.');
       }
 
       // Success
@@ -631,13 +562,13 @@ export default function App() {
         setDecOutputHash(data.outputHash);
         setSuccessData({
           type: 'decrypt',
-          outputPath: data.restorePath,
+          outputPath: data.outputPath,
           filename: data.filename,
           fileSize: data.fileSize,
           outputHash: data.outputHash,
-          hwLocked: data.hardwareLockVerified,
-          algorithm: data.algorithm,
-          steganography: data.steganography
+          duressTriggered: data.duressTriggered,
+          algorithm: encSettings.algorithm,
+          steganography: false
         });
         setIsProcessing(false);
         setScreen('success');
@@ -894,7 +825,6 @@ export default function App() {
       {/* Steganography View */}
       {screen === 'stego' && (
         <StegoConsole
-          token={token}
           t={t}
           lang={lang}
           onBack={resetForms}

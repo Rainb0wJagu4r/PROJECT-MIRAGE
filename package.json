@@ -7,7 +7,7 @@
   "scripts": {
     "predev": "node scripts/check-updates.js",
     "preapp:dev": "node scripts/check-updates.js",
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "npm run app:dev",
     "client": "vite",
     "server": "node server.js",
     "build": "vite build",
@@ -61,9 +61,10 @@
     ],
     "files": [
       "dist/**/*",
-      "certs/**/*",
+      "preload.cjs",
+      "ipc-handlers.js",
+      "lib/**/*",
       "main.js",
-      "server.js",
       "package.json",
       "resources/**/*"
     ],
