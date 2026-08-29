@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -116,6 +117,27 @@ const authenticateToken = (req, res, next) => {
   }
   next();
 };
+// Rate Limiting Middleware (Fixes CodeQL js/missing-rate-limiting)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Demasiadas peticiones desde esta IP. Inténtelo más tarde.' }
+});
+
+const strictAuthLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Demasiadas operaciones criptográficas. Inténtelo más tarde.' }
+});
+
+app.use('/api', apiLimiter);
+app.use('/api/encrypt', strictAuthLimiter);
+app.use('/api/decrypt', strictAuthLimiter);
+app.use('/api/emergency', strictAuthLimiter);
 app.use('/api', authenticateToken);
 
 // ---------------------------------------------------------------------------
@@ -261,7 +283,7 @@ function secureShred(filePath, passes = 3) {
 
 // JPEG Metadata Scrubber (Strips APP1/EXIF)
 function scrubJpeg(buffer) {
-  if (buffer[0] !== 0xFF || buffer[1] !== 0xD8) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4 || buffer[0] !== 0xFF || buffer[1] !== 0xD8) {
     return buffer; // Not a valid JPEG header
   }
   let offset = 2;
@@ -304,6 +326,9 @@ function scrubJpeg(buffer) {
 
 // PNG Metadata Scrubber (Strips tEXt, zTXt, iTXt, eXIf, tIME, pHYs)
 function scrubPng(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 8) {
+    return buffer;
+  }
   const pngSignature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
   if (buffer.subarray(0, 8).compare(pngSignature) !== 0) {
     return buffer; // Not a PNG
@@ -515,7 +540,7 @@ app.get('/api/system-status', (req, res) => {
 });
 
 app.get('/api/autocomplete', (req, res) => {
-  let queryPath = req.query.path || '';
+  let queryPath = typeof req.query.path === 'string' ? req.query.path.trim() : '';
   if (!queryPath) {
     queryPath = os.homedir();
   } else {
@@ -613,7 +638,7 @@ app.get('/api/system-shortcuts', (req, res) => {
 });
 
 app.get('/api/browse-dir', (req, res) => {
-  let queryPath = req.query.path || os.homedir();
+  let queryPath = typeof req.query.path === 'string' ? req.query.path.trim() : os.homedir();
   if (queryPath.startsWith('~')) {
     queryPath = path.join(os.homedir(), queryPath.slice(1));
   }
@@ -674,7 +699,10 @@ app.get('/api/browse-dir', (req, res) => {
 
 // File information and hashing API
 app.get('/api/file-info', (req, res) => {
-  let queryPath = req.query.path || '';
+  let queryPath = typeof req.query.path === 'string' ? req.query.path.trim() : '';
+  if (!queryPath) {
+    return res.json({ exists: false });
+  }
   if (queryPath.startsWith('~')) {
     queryPath = path.join(os.homedir(), queryPath.slice(1));
   }
@@ -749,24 +777,43 @@ app.post('/api/encrypt', async (req, res) => {
     }
 
     const {
-      password,
+      password = '',
       doubleFactorPassword = '',
       hardwareLockEnabled = false,
       metadataScrubEnabled = false,
       sizeObfuscationEnabled = true,
       ttlEnabled = false,
-      ttlValue,
+      ttlValue = '0',
       duressEnabled = false,
       duressPassword = '',
       duressDecoyPath = '',
       splitFragmentEnabled = false,
       shredOriginalEnabled = false,
       shredPasses = 3,
-      outputPath,
+      outputPath = '',
       algorithm = ALGORITHMS.CASCADE,
       steganographyEnabled = false,
       carrierPath = ''
-    } = settings;
+    } = typeof settings === 'object' && settings !== null && !Array.isArray(settings) ? settings : {};
+
+    if (typeof password !== 'string') {
+      throw new PolicyError('La contraseña maestra debe ser una cadena.');
+    }
+    if (typeof doubleFactorPassword !== 'string') {
+      throw new PolicyError('El segundo factor debe ser una cadena.');
+    }
+    if (duressEnabled && typeof duressPassword !== 'string') {
+      throw new PolicyError('La contraseña señuelo debe ser una cadena.');
+    }
+    if (typeof duressDecoyPath !== 'string') {
+      throw new PolicyError('La ruta señuelo debe ser una cadena.');
+    }
+    if (typeof outputPath !== 'string') {
+      throw new PolicyError('La ruta de salida debe ser una cadena.');
+    }
+    if (typeof carrierPath !== 'string') {
+      throw new PolicyError('La ruta del portador debe ser una cadena.');
+    }
 
     // ---------------------------------------------------------------------
     // Política de contraseñas (MIRAGE-013 parcial)
@@ -1051,6 +1098,11 @@ app.post('/api/decrypt', async (req, res) => {
       doubleFactorPassword = body.doubleFactorPassword || '';
       restorePath = body.restorePath || body.outputPath || '';
     }
+
+    password = typeof password === 'string' ? password : '';
+    doubleFactorPassword = typeof doubleFactorPassword === 'string' ? doubleFactorPassword : '';
+    restorePath = typeof restorePath === 'string' ? restorePath : '';
+    filePath = typeof filePath === 'string' ? filePath : '';
 
     if (!password) {
       throw new PolicyError('Se requiere la contraseña.');
@@ -1562,24 +1614,23 @@ app.post('/api/emergency/execute', async (req, res) => {
   };
 
   try {
-    const {
-      password,
-      doubleFactorPassword = '',
-      targetPaths = [],
-      exclusions = [],
-      algorithm = 'mirage-c4',
-      outputPath,
-      backupEnabled = true,
-      backupPath,
-      shredOriginalEnabled = false,
-      shredPasses = '3',
-      hardwareLockEnabled = false,
-      metadataScrubEnabled = true,
-      sizeObfuscationEnabled = true,
-      ttlEnabled = false,
-      ttlValue = '0',
-      confirmationKeyword = ''
-    } = req.body;
+    const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
+    const password = typeof body.password === 'string' ? body.password : '';
+    const doubleFactorPassword = typeof body.doubleFactorPassword === 'string' ? body.doubleFactorPassword : '';
+    const targetPaths = Array.isArray(body.targetPaths) ? body.targetPaths.filter(p => typeof p === 'string') : [];
+    const exclusions = Array.isArray(body.exclusions) ? body.exclusions.filter(e => typeof e === 'string') : [];
+    const algorithm = typeof body.algorithm === 'string' ? body.algorithm : 'mirage-c4';
+    const outputPath = typeof body.outputPath === 'string' ? body.outputPath : undefined;
+    const backupEnabled = Boolean(body.backupEnabled);
+    const backupPath = typeof body.backupPath === 'string' ? body.backupPath : undefined;
+    const shredOriginalEnabled = Boolean(body.shredOriginalEnabled);
+    const shredPasses = typeof body.shredPasses === 'string' || typeof body.shredPasses === 'number' ? String(body.shredPasses) : '3';
+    const hardwareLockEnabled = Boolean(body.hardwareLockEnabled);
+    const metadataScrubEnabled = Boolean(body.metadataScrubEnabled);
+    const sizeObfuscationEnabled = Boolean(body.sizeObfuscationEnabled);
+    const ttlEnabled = Boolean(body.ttlEnabled);
+    const ttlValue = typeof body.ttlValue === 'string' || typeof body.ttlValue === 'number' ? String(body.ttlValue) : '0';
+    const confirmationKeyword = typeof body.confirmationKeyword === 'string' ? body.confirmationKeyword : '';
 
     if (!password || password.length < 10) {
       throw new Error('Policy Error: Master emergency password must be at least 10 characters long');
@@ -1773,7 +1824,11 @@ app.post('/api/emergency/restore', async (req, res) => {
   };
 
   try {
-    const { vaultPath, password, doubleFactorPassword = '', restoreDir } = req.body;
+    const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
+    const vaultPath = typeof body.vaultPath === 'string' ? body.vaultPath.trim() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    const doubleFactorPassword = typeof body.doubleFactorPassword === 'string' ? body.doubleFactorPassword : '';
+    const restoreDir = typeof body.restoreDir === 'string' ? body.restoreDir.trim() : '';
 
     if (!vaultPath) {
       throw new Error('Vault path is required');
