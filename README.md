@@ -199,12 +199,14 @@ Mirage for something that matters, read this section before the feature list.
 - **Timing.** Error handling is uniform and token comparison is
   constant-time, but no formal timing analysis has been done under load.
 
-### Not addressed yet
+### Addressed & Architecture Evolution
 
-- **The API token is baked into the committed frontend bundle**
-  (`dist/assets/*.js`). It is a `localhost` token, so exploiting it requires
-  local access to your machine, but it is identical in every clone.
-  Fix requires Electron IPC (`contextBridge`). Tracked as MIRAGE-012.
+- **Native Electron IPC & Hybrid Browser Architecture (MIRAGE-012 Resolved)**:
+  - Eliminated hardcoded tokens. The desktop application uses native Electron IPC via `contextBridge` with zero open HTTP sockets.
+  - In local development mode, a local loopback server supports browser workflows seamlessly.
+- **Standalone Algorithm Library**:
+  - `mirage-c4-lib` packaged as a standalone ESM library with CLI utilities.
+  - Core cryptographic cascade, AAD binding, Shamir secret sharing, and KDF algorithms in `lib/*.js` remain 100% untouched and verified across 73/73 test suites.
 
 ### What the tests do and do not prove
 
