@@ -18,3 +18,4 @@ rfd = "0.15"
 sha3 = "0.10"
 hex = "0.4"
 zeroize = "1.9"
+image = { version = "0.25", default-features = false, features = ["png"] }

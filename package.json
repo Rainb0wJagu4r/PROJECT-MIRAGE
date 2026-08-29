@@ -5,6 +5,7 @@
   "type": "module",
   "main": "main.js",
   "scripts": {
+    "start": "cargo run --release",
     "dev": "concurrently -n \"API,WEB\" -c \"magenta,cyan\" \"npm run server --silent\" \"npm run client --silent\"",
     "client": "vite",
     "server": "node server.js",

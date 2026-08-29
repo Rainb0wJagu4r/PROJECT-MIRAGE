@@ -5,6 +5,7 @@ members = [
     "crates/mirage-cli",
     "crates/mirage-gui",
 ]
+default-members = ["crates/mirage-gui"]
 
 [workspace.package]
 version = "2.2.0"
