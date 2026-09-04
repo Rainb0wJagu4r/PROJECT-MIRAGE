@@ -19,10 +19,10 @@ use std::time::Instant;
 
 // Pure OLED Black & Electric Neon Purple Palette
 const COLOR_BG: Color32 = Color32::from_rgb(0, 0, 0); // True OLED Pitch Black #000000
-const COLOR_CARD: Color32 = Color32::from_rgb(13, 10, 20); // Deep Obsidian Purple #0D0A14
-const COLOR_CARD_HOVER: Color32 = Color32::from_rgb(22, 17, 34);
-const COLOR_INPUT: Color32 = Color32::from_rgb(7, 5, 12);
-const COLOR_SUB_BOX: Color32 = Color32::from_rgb(10, 8, 16);
+const COLOR_CARD: Color32 = Color32::from_rgb(12, 10, 18); // Deep Obsidian Purple #0C0A12
+const COLOR_CARD_HOVER: Color32 = Color32::from_rgb(20, 16, 30);
+const COLOR_INPUT: Color32 = Color32::from_rgb(6, 5, 10);
+const COLOR_SUB_BOX: Color32 = Color32::from_rgb(10, 8, 15);
 
 const PURPLE_MAIN: Color32 = Color32::from_rgb(147, 51, 234);
 const PURPLE_BRIGHT: Color32 = Color32::from_rgb(168, 85, 247);
@@ -37,7 +37,7 @@ const ACCENT_ROSE: Color32 = Color32::from_rgb(251, 113, 133);
 const TEXT_HEAD: Color32 = Color32::from_rgb(255, 255, 255);
 const TEXT_BODY: Color32 = Color32::from_rgb(243, 232, 255);
 const TEXT_MUTED: Color32 = Color32::from_rgb(175, 160, 200);
-const BORDER_COLOR: Color32 = Color32::from_rgb(55, 38, 82);
+const BORDER_COLOR: Color32 = Color32::from_rgb(50, 36, 75);
 const BORDER_PURPLE: Color32 = Color32::from_rgb(124, 58, 237);
 
 #[derive(PartialEq, Clone, Copy)]
@@ -202,14 +202,76 @@ fn card_header(ui: &mut egui::Ui, tag: &str, title: &str, subtitle: &str) {
         ui.add_space(4.0);
         ui.label(RichText::new(subtitle).font(FontId::proportional(13.5)).color(TEXT_MUTED));
     }
-    ui.add_space(12.0);
+    ui.add_space(14.0);
+}
+
+fn render_option_toggle_card(
+    ui: &mut egui::Ui,
+    tag: &str,
+    title: &str,
+    subtitle: &str,
+    is_active: &mut bool,
+) {
+    let card_bg = if *is_active {
+        Color32::from_rgb(18, 14, 28)
+    } else {
+        COLOR_SUB_BOX
+    };
+    let card_border = if *is_active {
+        PURPLE_BRIGHT
+    } else {
+        BORDER_COLOR
+    };
+
+    Frame::none()
+        .fill(card_bg)
+        .stroke(Stroke::new(1.2, card_border))
+        .rounding(Rounding::same(10.0))
+        .inner_margin(Margin::symmetric(14.0, 10.0))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                // Tag badge
+                Frame::none()
+                    .fill(if *is_active { PURPLE_DEEP } else { Color32::from_rgb(26, 20, 36) })
+                    .rounding(Rounding::same(6.0))
+                    .inner_margin(Margin::symmetric(8.0, 3.0))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(tag).font(FontId::monospace(11.5)).color(if *is_active { PURPLE_LIGHT } else { TEXT_MUTED }).strong());
+                    });
+                ui.add_space(8.0);
+
+                // Option description
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(title).font(FontId::proportional(14.0)).color(TEXT_HEAD).strong());
+                    ui.label(RichText::new(subtitle).font(FontId::proportional(12.0)).color(TEXT_MUTED));
+                });
+
+                // Toggle pill button on the right
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let (btn_text, btn_bg, btn_fg) = if *is_active {
+                        ("  ACTIVADO  ", PURPLE_MAIN, Color32::WHITE)
+                    } else {
+                        (" DESACTIVADO ", Color32::from_rgb(24, 18, 34), TEXT_MUTED)
+                    };
+
+                    let toggle_btn = egui::Button::new(RichText::new(btn_text).font(FontId::monospace(11.5)).color(btn_fg).strong())
+                        .fill(btn_bg)
+                        .stroke(Stroke::new(1.0, if *is_active { PURPLE_LIGHT } else { BORDER_COLOR }))
+                        .rounding(Rounding::same(14.0))
+                        .min_size(Vec2::new(115.0, 30.0));
+
+                    if ui.add(toggle_btn).clicked() {
+                        *is_active = !*is_active;
+                    }
+                });
+            });
+        });
 }
 
 impl eframe::App for MirageApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ensure_logo_loaded(ctx);
 
-        // Configure Modern OLED Dark Theme & Comfortable Sizing
         let mut visuals = egui::Visuals::dark();
         visuals.panel_fill = COLOR_BG;
         visuals.window_fill = COLOR_BG;
@@ -247,7 +309,7 @@ impl eframe::App for MirageApp {
             .frame(Frame::none().fill(COLOR_BG).inner_margin(Margin::symmetric(20.0, 18.0)))
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    // 1. Centered Logo Image (Crisp 84x84)
+                    // 1. Centered Logo Image
                     if let Some(texture) = &self.logo_texture {
                         ui.add(egui::Image::new(texture).fit_to_exact_size(Vec2::new(84.0, 84.0)).rounding(Rounding::same(14.0)));
                         ui.add_space(8.0);
@@ -271,9 +333,9 @@ impl eframe::App for MirageApp {
 
                     // 3. Centered KAT Status Badge
                     let (badge_text, badge_fg, badge_bg) = if self.kat_summary.overall {
-                        ("✓ KAT AUDITADO: 100% ONLINE (AES-GCM, Camellia, ARIA, ChaCha20, Scrypt-HKDF)", ACCENT_EMERALD, Color32::from_rgb(10, 36, 26))
+                        ("● KAT AUDITADO: 100% ONLINE (AES-GCM, Camellia, ARIA, ChaCha20, Scrypt-HKDF)", ACCENT_EMERALD, Color32::from_rgb(10, 36, 26))
                     } else {
-                        ("⚠ ERROR EN SUITE KAT", ACCENT_ROSE, Color32::from_rgb(45, 15, 20))
+                        ("! ERROR EN SUITE KAT", ACCENT_ROSE, Color32::from_rgb(45, 15, 20))
                     };
                     Frame::none()
                         .fill(badge_bg)
@@ -395,9 +457,11 @@ impl eframe::App for MirageApp {
 
 impl MirageApp {
     fn render_encrypt_tab(&mut self, ui: &mut egui::Ui, card_width: f32) {
+        let inner_width = card_width - 40.0;
+
         // Card 1: File Selection
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
+            ui.set_width(inner_width);
             card_header(ui, "01", "ARCHIVO A PROTEGER", "Selecciona el archivo confidencial que deseas cifrar");
 
             ui.horizontal(|ui| {
@@ -423,7 +487,7 @@ impl MirageApp {
                 if let Some(file) = &self.encrypt_file {
                     ui.vertical(|ui| {
                         ui.label(
-                            RichText::new(format!("✓ {}", file.file_name().unwrap_or_default().to_string_lossy()))
+                            RichText::new(format!("● {}", file.file_name().unwrap_or_default().to_string_lossy()))
                                 .font(FontId::proportional(15.0))
                                 .color(ACCENT_EMERALD)
                                 .strong(),
@@ -447,7 +511,7 @@ impl MirageApp {
                     .rounding(Rounding::same(8.0))
                     .inner_margin(Margin::symmetric(14.0, 10.0))
                     .show(ui, |ui| {
-                        ui.set_width(card_width - 68.0);
+                        ui.set_width(inner_width - 28.0);
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("SHA3-256:").font(FontId::monospace(12.0)).color(PURPLE_LIGHT).strong());
                             ui.label(RichText::new(&self.encrypt_file_hash).font(FontId::monospace(12.0)).color(TEXT_HEAD));
@@ -460,7 +524,7 @@ impl MirageApp {
 
         // Card 2: Password & Entropy
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
+            ui.set_width(inner_width);
             card_header(ui, "02", "AUTENTICACION & ENTROPIA", "Clave maestra blindada con Scrypt (N=131072, r=8, p=1)");
 
             ui.horizontal(|ui| {
@@ -492,9 +556,9 @@ impl MirageApp {
                 let (bits_label, color, fill_pct) = match assessment {
                     Ok(bits) => {
                         let pct = ((bits as f32) / 100.0).clamp(0.0, 1.0);
-                        (format!("✓ Fortaleza: ~{bits} bits de entropia (Cumple politica de seguridad)"), ACCENT_EMERALD, pct)
+                        (format!("● Fortaleza: ~{bits} bits de entropia (Cumple politica de seguridad)"), ACCENT_EMERALD, pct)
                     }
-                    Err(err) => (format!("⚠ Aviso: {err}"), ACCENT_ROSE, 0.25),
+                    Err(err) => (format!("! Aviso: {err}"), ACCENT_ROSE, 0.25),
                 };
 
                 ui.label(RichText::new(bits_label).font(FontId::monospace(12.0)).color(color).strong());
@@ -520,8 +584,8 @@ impl MirageApp {
 
         // Card 3: Cryptographic Configuration & Mirage-C4 Cascade Breakdown
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
-            card_header(ui, "03", "SUITE CRIPTOGRAFICA & OPCIONES", "Configura el blindaje del contenedor .wraith");
+            ui.set_width(inner_width);
+            card_header(ui, "03", "SUITE CRIPTOGRAFICA & OPCIONES", "Configura el algoritmo core y los modulos de blindaje");
 
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Algoritmo de Cifrado:").font(FontId::proportional(14.5)).color(TEXT_BODY).strong());
@@ -544,7 +608,7 @@ impl MirageApp {
                     });
             });
 
-            // Prominent Mirage-C4 Cascade Breakdown with Large Legible Font
+            // Mirage-C4 Cascade Breakdown Box
             if self.encrypt_algorithm == Algorithm::CascadeC4 {
                 ui.add_space(10.0);
                 Frame::none()
@@ -553,7 +617,7 @@ impl MirageApp {
                     .rounding(Rounding::same(10.0))
                     .inner_margin(Margin::symmetric(16.0, 14.0))
                     .show(ui, |ui| {
-                        ui.set_width(card_width - 72.0);
+                        ui.set_width(inner_width - 32.0);
                         ui.label(
                             RichText::new("ARQUITECTURA DE LA CASCADA MIRAGE-C4 v2:")
                                 .font(FontId::proportional(13.5))
@@ -587,43 +651,99 @@ impl MirageApp {
 
                         ui.add_space(4.0);
                         ui.label(
-                            RichText::new("• KDF Blindado: Scrypt (N=131072, r=8, p=1) + HKDF-SHA256 con subllaves separadas y zeroizacion.")
+                            RichText::new("• KDF Blindado: Scrypt (N=131072, r=8, p=1) + HKDF-SHA256 con subllaves separadas y zeroizacion en RAM.")
                                 .font(FontId::proportional(12.0))
                                 .color(TEXT_MUTED),
                         );
                     });
             }
 
-            ui.add_space(12.0);
-            ui.checkbox(&mut self.encrypt_padme, RichText::new("Cuantizacion de tamano Padme (<= 12% sobrecoste - PETS 2019)").font(FontId::proportional(14.0)));
-            ui.checkbox(&mut self.encrypt_shamir, RichText::new("Dividir en fragmentos 2-de-3 (Shamir Secret Sharing sobre GF(256))").font(FontId::proportional(14.0)));
+            ui.add_space(14.0);
+            ui.label(RichText::new("MODULOS DE PROTECCION AVANZADA:").font(FontId::proportional(13.0)).color(PURPLE_LIGHT).strong());
+            ui.add_space(4.0);
 
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                let stego_btn = egui::Button::new(RichText::new("  OCULTAR EN IMAGEN (ESTEGANOGRAFIA)...  ").font(FontId::proportional(13.0)).strong())
-                    .fill(Color32::from_rgb(26, 20, 38))
-                    .stroke(Stroke::new(1.0, BORDER_COLOR))
-                    .rounding(Rounding::same(8.0));
+            // Centered Option Cards
+            render_option_toggle_card(
+                ui,
+                "PADME",
+                "Cuantizacion de Tamano Padme",
+                "Protege contra filtracion por longitud del archivo (<= 12% sobrecoste - PETS 2019)",
+                &mut self.encrypt_padme,
+            );
 
-                if ui.add(stego_btn).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Imagenes", &["png", "jpg", "jpeg"])
-                        .pick_file()
-                    {
-                        self.encrypt_carrier_file = Some(path);
-                    }
-                }
-                if let Some(c) = &self.encrypt_carrier_file {
-                    ui.label(RichText::new(c.file_name().unwrap_or_default().to_string_lossy()).font(FontId::proportional(13.0)).color(PURPLE_LIGHT).strong());
-                    if ui.button(RichText::new(" [X] ").font(FontId::proportional(12.0))).clicked() {
-                        self.encrypt_carrier_file = None;
-                    }
-                }
-            });
+            ui.add_space(6.0);
+            render_option_toggle_card(
+                ui,
+                "SHAMIR",
+                "Division Secreta 2-de-3 (GF-256)",
+                "Genera 3 fragmentos matematicos independientes; requiere cualesquiera 2 para descifrar",
+                &mut self.encrypt_shamir,
+            );
 
-            ui.add_space(8.0);
-            ui.checkbox(&mut self.encrypt_duress_enabled, RichText::new("Modo Coaccion (Documento senuelo con contrasena secundaria)").font(FontId::proportional(14.0)));
+            ui.add_space(6.0);
+            // Steganography Option Card
+            let is_stego_active = self.encrypt_carrier_file.is_some();
+            Frame::none()
+                .fill(if is_stego_active { Color32::from_rgb(18, 14, 28) } else { COLOR_SUB_BOX })
+                .stroke(Stroke::new(1.2, if is_stego_active { PURPLE_BRIGHT } else { BORDER_COLOR }))
+                .rounding(Rounding::same(10.0))
+                .inner_margin(Margin::symmetric(14.0, 10.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        Frame::none()
+                            .fill(if is_stego_active { PURPLE_DEEP } else { Color32::from_rgb(26, 20, 36) })
+                            .rounding(Rounding::same(6.0))
+                            .inner_margin(Margin::symmetric(8.0, 3.0))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("STEGO").font(FontId::monospace(11.5)).color(if is_stego_active { PURPLE_LIGHT } else { TEXT_MUTED }).strong());
+                            });
+                        ui.add_space(8.0);
+
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("Esteganografia Portadora (PNG / JPEG)").font(FontId::proportional(14.0)).color(TEXT_HEAD).strong());
+                            if let Some(c) = &self.encrypt_carrier_file {
+                                ui.label(RichText::new(format!("● Portadora: {}", c.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(12.5)).color(ACCENT_EMERALD).strong());
+                            } else {
+                                ui.label(RichText::new("Inyecta el contenedor .wraith dentro de una imagen real").font(FontId::proportional(12.0)).color(TEXT_MUTED));
+                            }
+                        });
+
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if self.encrypt_carrier_file.is_some() {
+                                if ui.button(RichText::new(" [X] REMOVER ").font(FontId::monospace(11.0)).color(ACCENT_ROSE)).clicked() {
+                                    self.encrypt_carrier_file = None;
+                                }
+                            } else {
+                                let stego_btn = egui::Button::new(RichText::new("  ELEGIR IMAGEN...  ").font(FontId::proportional(12.5)).strong())
+                                    .fill(Color32::from_rgb(32, 24, 48))
+                                    .stroke(Stroke::new(1.0, BORDER_COLOR))
+                                    .rounding(Rounding::same(12.0));
+
+                                if ui.add(stego_btn).clicked() {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("Imagenes", &["png", "jpg", "jpeg"])
+                                        .pick_file()
+                                    {
+                                        self.encrypt_carrier_file = Some(path);
+                                    }
+                                }
+                            }
+                        });
+                    });
+                });
+
+            ui.add_space(6.0);
+            // Duress Mode Option Card
+            render_option_toggle_card(
+                ui,
+                "DURESS",
+                "Modo Coaccion / Documento Senuelo",
+                "Desbloquea un archivo trampa inofensivo ante contrasenas forzadas",
+                &mut self.encrypt_duress_enabled,
+            );
+
             if self.encrypt_duress_enabled {
+                ui.add_space(6.0);
                 Frame::none()
                     .fill(COLOR_SUB_BOX)
                     .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
@@ -631,18 +751,23 @@ impl MirageApp {
                     .inner_margin(Margin::same(12.0))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("Contrasena Senuelo:").font(FontId::proportional(13.5)).color(TEXT_BODY));
+                            ui.label(RichText::new("Contrasena Senuelo:").font(FontId::proportional(13.5)).color(TEXT_BODY).strong());
                             ui.add(egui::TextEdit::singleline(&mut self.encrypt_duress_password).password(true));
                         });
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
-                            if ui.button(RichText::new("Seleccionar Senuelo...").font(FontId::proportional(13.0))).clicked() {
+                            let pick_decoy_btn = egui::Button::new(RichText::new("  Seleccionar Archivo Senuelo...  ").font(FontId::proportional(13.0)))
+                                .fill(Color32::from_rgb(32, 24, 48))
+                                .stroke(Stroke::new(1.0, BORDER_COLOR))
+                                .rounding(Rounding::same(8.0));
+
+                            if ui.add(pick_decoy_btn).clicked() {
                                 if let Some(path) = rfd::FileDialog::new().pick_file() {
                                     self.encrypt_duress_file = Some(path);
                                 }
                             }
                             if let Some(df) = &self.encrypt_duress_file {
-                                ui.label(RichText::new(df.file_name().unwrap_or_default().to_string_lossy()).font(FontId::proportional(13.0)).color(TEXT_HEAD));
+                                ui.label(RichText::new(format!("✓ {}", df.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(13.0)).color(TEXT_HEAD));
                             }
                         });
                     });
@@ -756,8 +881,10 @@ impl MirageApp {
     }
 
     fn render_decrypt_tab(&mut self, ui: &mut egui::Ui, card_width: f32) {
+        let inner_width = card_width - 40.0;
+
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
+            ui.set_width(inner_width);
             card_header(ui, "01", "ARCHIVO CIFRADO O FRAGMENTOS", "Carga el contenedor .wraith o las partes .share");
 
             ui.horizontal(|ui| {
@@ -780,7 +907,7 @@ impl MirageApp {
 
                 if !self.decrypt_files.is_empty() {
                     ui.label(
-                        RichText::new(format!("✓ {} archivo(s) seleccionado(s)", self.decrypt_files.len()))
+                        RichText::new(format!("● {} archivo(s) seleccionado(s)", self.decrypt_files.len()))
                             .font(FontId::proportional(14.5))
                             .color(ACCENT_EMERALD)
                             .strong(),
@@ -796,7 +923,7 @@ impl MirageApp {
         ui.add_space(14.0);
 
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
+            ui.set_width(inner_width);
             card_header(ui, "02", "CREDENCIALES DE DESBLOQUEO", "Autenticacion AEAD con verificacion previa a la restauracion");
 
             ui.horizontal(|ui| {
@@ -940,8 +1067,10 @@ impl MirageApp {
     }
 
     fn render_shamir_tab(&mut self, ui: &mut egui::Ui, card_width: f32) {
+        let inner_width = card_width - 40.0;
+
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
+            ui.set_width(inner_width);
             card_header(ui, "01", "SHAMIR SECRET SHARING 2-DE-3", "Divide cualquier archivo en partes con secreto perfecto en GF(256)");
             ui.add_space(4.0);
 
@@ -1007,8 +1136,10 @@ impl MirageApp {
     }
 
     fn render_diagnostics_tab(&mut self, ui: &mut egui::Ui, card_width: f32) {
+        let inner_width = card_width - 40.0;
+
         card_frame().show(ui, |ui| {
-            ui.set_width(card_width - 40.0);
+            ui.set_width(inner_width);
             card_header(ui, "KAT", "KNOWN ANSWER TESTS — DIAGNOSTICO EN VIVO", "Vectores oficiales de referencia publicados (NIST, RFCs)");
             ui.label(RichText::new(&self.kat_summary.disclaimer).color(TEXT_MUTED).font(FontId::proportional(13.0)));
             ui.add_space(12.0);
@@ -1020,7 +1151,7 @@ impl MirageApp {
                     .rounding(Rounding::same(8.0))
                     .inner_margin(Margin::symmetric(14.0, 10.0))
                     .show(ui, |ui| {
-                        ui.set_width(card_width - 68.0);
+                        ui.set_width(inner_width - 28.0);
                         ui.horizontal(|ui| {
                             if test.passed {
                                 ui.label(RichText::new(" PASS ").color(Color32::BLACK).background_color(ACCENT_EMERALD).font(FontId::monospace(11.0)).strong());
