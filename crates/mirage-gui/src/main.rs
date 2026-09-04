@@ -1372,7 +1372,39 @@ fn load_app_icon() -> Option<Arc<egui::IconData>> {
     None
 }
 
+#[cfg(target_os = "windows")]
+fn register_windows_file_association() {
+    use std::os::windows::process::CommandExt;
+    if let Ok(exe_path) = std::env::current_exe() {
+        let exe_str = exe_path.to_string_lossy();
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let _ = std::process::Command::new("reg")
+            .args(["add", "HKCU\\Software\\Classes\\.wraith", "/ve", "/d", "ProjectMirage.Wraith", "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        let _ = std::process::Command::new("reg")
+            .args(["add", "HKCU\\Software\\Classes\\ProjectMirage.Wraith", "/ve", "/d", "WRAITH Encrypted Container", "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        let _ = std::process::Command::new("reg")
+            .args(["add", "HKCU\\Software\\Classes\\ProjectMirage.Wraith\\DefaultIcon", "/ve", "/d", &format!("\"{exe_str}\",0"), "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        let _ = std::process::Command::new("reg")
+            .args(["add", "HKCU\\Software\\Classes\\ProjectMirage.Wraith\\shell\\open\\command", "/ve", "/d", &format!("\"{exe_str}\" \"%1\""), "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
 fn main() -> eframe::Result<()> {
+    #[cfg(target_os = "windows")]
+    register_windows_file_association();
+
     let icon = load_app_icon();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Project Mirage — Armored Cryptosystem (LTS)")

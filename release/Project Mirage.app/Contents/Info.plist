@@ -5,10 +5,12 @@
     <key>CFBundleExecutable</key>
     <string>mirage-gui</string>
     <key>CFBundleIconFile</key>
-    <string>icon.icns</string>
+    <string>nobug.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.mirage.vault</string>
+    <string>com.projectmirage.wraith</string>
     <key>CFBundleName</key>
+    <string>Project Mirage</string>
+    <key>CFBundleDisplayName</key>
     <string>Project Mirage</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
@@ -18,5 +20,51 @@
     <string>2.2.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>WRAITH Encrypted File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.projectmirage.wraith</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>nobug.icns</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>wraith</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.projectmirage.wraith</string>
+            <key>UTTypeReferenceURL</key>
+            <string>https://fileinfo.com/extension/wraith</string>
+            <key>UTTypeDescription</key>
+            <string>WRAITH Encrypted File</string>
+            <key>UTTypeIconFile</key>
+            <string>nobug.icns</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>wraith</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
 </dict>
 </plist>
