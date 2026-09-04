@@ -233,11 +233,8 @@ fn render_option_toggle_card(
     is_active: &mut bool,
     card_w: f32,
 ) {
-    let pad = ((ui.available_width() - card_w) / 2.0).max(0.0);
-    ui.horizontal(|ui| {
-        if pad > 0.0 {
-            ui.add_space(pad);
-        }
+    ui.vertical_centered(|ui| {
+        ui.set_max_width(card_w);
         Frame::none()
             .fill(if *is_active {
                 Color32::from_rgb(18, 14, 28)
@@ -248,7 +245,6 @@ fn render_option_toggle_card(
             .rounding(Rounding::same(8.0))
             .inner_margin(Margin::symmetric(12.0, 8.0))
             .show(ui, |ui| {
-                ui.set_width(card_w - 24.0);
                 ui.horizontal(|ui| {
                     Frame::none()
                         .fill(if *is_active { PURPLE_DEEP } else { Color32::from_rgb(26, 20, 36) })
@@ -264,9 +260,11 @@ fn render_option_toggle_card(
                         });
                     ui.add_space(6.0);
 
+                    let available_text_w = card_w - 24.0 - 55.0 - 6.0 - 95.0 - 10.0;
                     ui.vertical(|ui| {
+                        ui.set_max_width(available_text_w);
                         ui.label(RichText::new(title).font(FontId::proportional(12.0)).color(TEXT_HEAD).strong());
-                        ui.label(RichText::new(subtitle).font(FontId::proportional(10.5)).color(TEXT_MUTED));
+                        ui.add(egui::Label::new(RichText::new(subtitle).font(FontId::proportional(10.5)).color(TEXT_MUTED)).wrap());
                     });
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -430,7 +428,7 @@ impl eframe::App for MirageApp {
                         ui.label(RichText::new(msg).font(FontId::monospace(10.5)).color(*color));
                     }
 
-                    // Sleek Scroll Down button docked on the right side of the bottom panel (never overlaps text fields)
+                    // Sleek Scroll Down button docked on the right side of the bottom panel
                     if !self.is_scrolled_to_bottom && self.active_tab != ActiveTab::Diagnostics {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             let scroll_btn = egui::Button::new(
@@ -526,74 +524,71 @@ impl MirageApp {
             card_header_centered(ui, "01", "PROTECTED FILE", "Select the confidential payload file to encrypt");
 
             ui.vertical_centered(|ui| {
-                let pad = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-                    Frame::none()
-                        .fill(COLOR_SUB_BOX)
-                        .stroke(Stroke::new(1.0, if self.encrypt_file.is_some() { PURPLE_BRIGHT } else { BORDER_COLOR }))
-                        .rounding(Rounding::same(10.0))
-                        .inner_margin(Margin::symmetric(20.0, 14.0))
-                        .show(ui, |ui| {
-                            ui.set_width(subbox_width - 24.0);
-                            ui.vertical_centered(|ui| {
-                                let pick_btn = egui::Button::new(
-                                    RichText::new("  SELECT FILE...  ")
-                                        .font(FontId::proportional(12.5))
-                                        .color(TEXT_HEAD)
+                ui.set_max_width(subbox_width);
+                Frame::none()
+                    .fill(COLOR_SUB_BOX)
+                    .stroke(Stroke::new(1.0, if self.encrypt_file.is_some() { PURPLE_BRIGHT } else { BORDER_COLOR }))
+                    .rounding(Rounding::same(10.0))
+                    .inner_margin(Margin::symmetric(20.0, 14.0))
+                    .show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            let pick_btn = egui::Button::new(
+                                RichText::new("  SELECT FILE...  ")
+                                    .font(FontId::proportional(12.5))
+                                    .color(TEXT_HEAD)
+                                    .strong(),
+                            )
+                            .fill(Color32::from_rgb(38, 28, 56))
+                            .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
+                            .rounding(Rounding::same(10.0))
+                            .min_size(Vec2::new(200.0, 36.0));
+
+                            if ui.add(pick_btn).clicked() {
+                                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                    self.set_encrypt_file(path);
+                                }
+                            }
+
+                            ui.add_space(6.0);
+
+                            if let Some(file) = &self.encrypt_file {
+                                ui.label(
+                                    RichText::new(format!("[OK] {}", file.file_name().unwrap_or_default().to_string_lossy()))
+                                        .font(FontId::proportional(13.0))
+                                        .color(ACCENT_EMERALD)
                                         .strong(),
-                                )
-                                .fill(Color32::from_rgb(38, 28, 56))
-                                .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
-                                .rounding(Rounding::same(10.0))
-                                .min_size(Vec2::new(200.0, 36.0));
+                                );
+                                ui.add_space(1.0);
+                                ui.label(
+                                    RichText::new(format!("Size: {}", format_bytes(self.encrypt_file_size)))
+                                        .font(FontId::proportional(11.5))
+                                        .color(TEXT_MUTED),
+                                );
 
-                                if ui.add(pick_btn).clicked() {
-                                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                        self.set_encrypt_file(path);
-                                    }
-                                }
-
-                                ui.add_space(6.0);
-
-                                if let Some(file) = &self.encrypt_file {
-                                    ui.label(
-                                        RichText::new(format!("[OK] {}", file.file_name().unwrap_or_default().to_string_lossy()))
-                                            .font(FontId::proportional(13.0))
-                                            .color(ACCENT_EMERALD)
-                                            .strong(),
-                                    );
-                                    ui.add_space(1.0);
-                                    ui.label(
-                                        RichText::new(format!("Size: {}", format_bytes(self.encrypt_file_size)))
-                                            .font(FontId::proportional(11.5))
-                                            .color(TEXT_MUTED),
-                                    );
-
-                                    if !self.encrypt_file_hash.is_empty() {
-                                        ui.add_space(6.0);
-                                        Frame::none()
-                                            .fill(COLOR_INPUT)
-                                            .stroke(Stroke::new(1.0, BORDER_COLOR))
-                                            .rounding(Rounding::same(6.0))
-                                            .inner_margin(Margin::symmetric(10.0, 6.0))
-                                            .show(ui, |ui| {
-                                                ui.horizontal_wrapped(|ui| {
-                                                    ui.label(RichText::new("SHA3-256:").font(FontId::monospace(10.0)).color(PURPLE_LIGHT).strong());
-                                                    ui.label(RichText::new(&self.encrypt_file_hash).font(FontId::monospace(10.0)).color(TEXT_HEAD));
-                                                });
+                                if !self.encrypt_file_hash.is_empty() {
+                                    ui.add_space(8.0);
+                                    Frame::none()
+                                        .fill(COLOR_INPUT)
+                                        .stroke(Stroke::new(1.0, BORDER_COLOR))
+                                        .rounding(Rounding::same(6.0))
+                                        .inner_margin(Margin::symmetric(14.0, 7.0))
+                                        .show(ui, |ui| {
+                                            ui.vertical_centered(|ui| {
+                                                ui.label(RichText::new("SHA3-256 PAYLOAD INTEGRITY HASH").font(FontId::monospace(9.5)).color(PURPLE_LIGHT).strong());
+                                                ui.add_space(3.0);
+                                                ui.label(RichText::new(&self.encrypt_file_hash).font(FontId::monospace(9.5)).color(TEXT_HEAD));
                                             });
-                                    }
-                                } else {
-                                    ui.label(
-                                        RichText::new("No file loaded in memory")
-                                            .font(FontId::proportional(11.5))
-                                            .color(TEXT_MUTED),
-                                    );
+                                        });
                                 }
-                            });
+                            } else {
+                                ui.label(
+                                    RichText::new("No file loaded in memory")
+                                        .font(FontId::proportional(11.5))
+                                        .color(TEXT_MUTED),
+                                );
+                            }
                         });
-                });
+                    });
             });
         });
 
@@ -605,17 +600,15 @@ impl MirageApp {
             card_header_centered(ui, "02", "AUTHENTICATION & ENTROPY", "Master passphrase derived via Scrypt (N=131072, r=8, p=1)");
 
             ui.vertical_centered(|ui| {
+                ui.set_max_width(row_width);
+
                 // Password Label
                 ui.label(RichText::new("Master Passphrase:").font(FontId::proportional(12.0)).color(TEXT_BODY).strong());
                 ui.add_space(3.0);
 
-                // Password Input + Show/Hide Button (Total width = row_width)
-                let input_w = row_width - 78.0; // 342px input + 8px spacing + 70px button = 420px
-                let pad = ((ui.available_width() - row_width) / 2.0).max(0.0);
-
+                // Password Input + Show/Hide Button
+                let input_w = row_width - 78.0;
                 ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-
                     let mut edit = egui::TextEdit::singleline(&mut self.encrypt_password)
                         .font(FontId::proportional(12.5))
                         .desired_width(input_w)
@@ -649,29 +642,22 @@ impl MirageApp {
 
                     ui.label(RichText::new(bits_label).font(FontId::monospace(10.5)).color(color).strong());
                     ui.add_space(2.0);
-                    ui.horizontal(|ui| {
-                        if pad > 0.0 { ui.add_space(pad); }
-                        ui.add_sized([row_width, 6.0], egui::ProgressBar::new(fill_pct).fill(color).animate(false));
-                    });
+                    ui.add_sized([row_width, 6.0], egui::ProgressBar::new(fill_pct).fill(color).animate(false));
                 }
 
                 ui.add_space(8.0);
 
-                // 2FA Symmetric Field (Total width = row_width)
+                // 2FA Symmetric Field
                 ui.label(RichText::new("Optional Second Factor Secret (2FA):").font(FontId::proportional(12.0)).color(TEXT_BODY).strong());
                 ui.add_space(3.0);
 
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.encrypt_2fa)
-                            .font(FontId::proportional(12.5))
-                            .password(true)
-                            .desired_width(row_width)
-                            .margin(Margin::symmetric(8.0, 6.0)),
-                    );
-                });
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.encrypt_2fa)
+                        .font(FontId::proportional(12.5))
+                        .password(true)
+                        .desired_width(row_width)
+                        .margin(Margin::symmetric(8.0, 6.0)),
+                );
             });
         });
 
@@ -718,55 +704,55 @@ impl MirageApp {
             // Mirage-C4 Cascade Breakdown Box Centered
             if self.encrypt_algorithm == Algorithm::CascadeC4 {
                 ui.add_space(10.0);
-                let pad = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(subbox_width);
                     Frame::none()
                         .fill(COLOR_SUB_BOX)
                         .stroke(Stroke::new(1.0, BORDER_PURPLE))
                         .rounding(Rounding::same(8.0))
                         .inner_margin(Margin::symmetric(14.0, 10.0))
                         .show(ui, |ui| {
-                            ui.set_width(subbox_width - 24.0);
-                            ui.vertical_centered(|ui| {
+                            ui.vertical(|ui| {
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        RichText::new("MIRAGE-C4 v2 CASCADE ARCHITECTURE:")
+                                            .font(FontId::proportional(12.0))
+                                            .color(PURPLE_LIGHT)
+                                            .strong(),
+                                    );
+                                });
+                                ui.add_space(6.0);
+
+                                let layers = [
+                                    ("Layer 1", "Camellia-256-CBC", "128-bit Block Cipher (RFC 3713 / NESSIE)"),
+                                    ("Layer 2", "ChaCha20", "High-speed Stream Cipher (RFC 8439)"),
+                                    ("Layer 3", "ARIA-256-CBC", "Korean Standard Block Cipher (RFC 5794)"),
+                                    ("Layer 4", "AES-256-GCM", "Authenticated Cipher + AAD Tag (NIST SP 800-38D)"),
+                                ];
+
+                                for (num, algo, desc) in layers {
+                                    ui.horizontal(|ui| {
+                                        Frame::none()
+                                            .fill(Color32::from_rgb(26, 20, 42))
+                                            .stroke(Stroke::new(1.0, PURPLE_DEEP))
+                                            .rounding(Rounding::same(4.0))
+                                            .inner_margin(Margin::symmetric(5.0, 2.0))
+                                            .show(ui, |ui| {
+                                                ui.label(RichText::new(num).font(FontId::monospace(10.0)).color(PURPLE_BRIGHT).strong());
+                                            });
+                                        ui.label(RichText::new(algo).font(FontId::proportional(11.5)).color(TEXT_HEAD).strong());
+                                        ui.label(RichText::new(format!("-> {}", desc)).font(FontId::proportional(11.0)).color(TEXT_MUTED));
+                                    });
+                                    ui.add_space(1.5);
+                                }
+
+                                ui.add_space(4.0);
                                 ui.label(
-                                    RichText::new("MIRAGE-C4 v2 CASCADE ARCHITECTURE:")
-                                        .font(FontId::proportional(12.0))
-                                        .color(PURPLE_LIGHT)
-                                        .strong(),
+                                    RichText::new("• Armored KDF: Scrypt (N=131072, r=8, p=1) + HKDF-SHA256 with domain-separated subkeys and zeroization.")
+                                        .font(FontId::proportional(10.5))
+                                        .color(TEXT_MUTED),
                                 );
                             });
-                            ui.add_space(6.0);
-
-                            let layers = [
-                                ("Layer 1", "Camellia-256-CBC", "128-bit Block Cipher (RFC 3713 / NESSIE)"),
-                                ("Layer 2", "ChaCha20", "High-speed Stream Cipher (RFC 8439)"),
-                                ("Layer 3", "ARIA-256-CBC", "Korean Standard Block Cipher (RFC 5794)"),
-                                ("Layer 4", "AES-256-GCM", "Authenticated Cipher + AAD Tag (NIST SP 800-38D)"),
-                            ];
-
-                            for (num, algo, desc) in layers {
-                                ui.horizontal(|ui| {
-                                    Frame::none()
-                                        .fill(Color32::from_rgb(26, 20, 42))
-                                        .stroke(Stroke::new(1.0, PURPLE_DEEP))
-                                        .rounding(Rounding::same(4.0))
-                                        .inner_margin(Margin::symmetric(5.0, 2.0))
-                                        .show(ui, |ui| {
-                                            ui.label(RichText::new(num).font(FontId::monospace(10.0)).color(PURPLE_BRIGHT).strong());
-                                        });
-                                    ui.label(RichText::new(algo).font(FontId::proportional(11.5)).color(TEXT_HEAD).strong());
-                                    ui.label(RichText::new(format!("-> {}", desc)).font(FontId::proportional(11.0)).color(TEXT_MUTED));
-                                });
-                                ui.add_space(1.5);
-                            }
-
-                            ui.add_space(4.0);
-                            ui.label(
-                                RichText::new("• Armored KDF: Scrypt (N=131072, r=8, p=1) + HKDF-SHA256 with domain-separated subkeys and zeroization.")
-                                    .font(FontId::proportional(10.5))
-                                    .color(TEXT_MUTED),
-                            );
                         });
                 });
             }
@@ -800,16 +786,14 @@ impl MirageApp {
             ui.add_space(4.0);
             // Steganography Option Card
             let is_stego_active = self.encrypt_carrier_file.is_some();
-            let pad_stego = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-            ui.horizontal(|ui| {
-                if pad_stego > 0.0 { ui.add_space(pad_stego); }
+            ui.vertical_centered(|ui| {
+                ui.set_max_width(subbox_width);
                 Frame::none()
                     .fill(if is_stego_active { Color32::from_rgb(18, 14, 28) } else { COLOR_SUB_BOX })
                     .stroke(Stroke::new(1.0, if is_stego_active { PURPLE_BRIGHT } else { BORDER_COLOR }))
                     .rounding(Rounding::same(8.0))
                     .inner_margin(Margin::symmetric(12.0, 8.0))
                     .show(ui, |ui| {
-                        ui.set_width(subbox_width - 24.0);
                         ui.horizontal(|ui| {
                             Frame::none()
                                 .fill(if is_stego_active { PURPLE_DEEP } else { Color32::from_rgb(26, 20, 36) })
@@ -820,12 +804,14 @@ impl MirageApp {
                                 });
                             ui.add_space(6.0);
 
+                            let available_text_w = subbox_width - 24.0 - 55.0 - 6.0 - 130.0 - 10.0;
                             ui.vertical(|ui| {
+                                ui.set_max_width(available_text_w);
                                 ui.label(RichText::new("Carrier Steganography (PNG / JPEG)").font(FontId::proportional(12.0)).color(TEXT_HEAD).strong());
                                 if let Some(c) = &self.encrypt_carrier_file {
                                     ui.label(RichText::new(format!("[OK] Carrier: {}", c.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(11.0)).color(ACCENT_EMERALD).strong());
                                 } else {
-                                    ui.label(RichText::new("Injects the .wraith container into a genuine image file").font(FontId::proportional(10.5)).color(TEXT_MUTED));
+                                    ui.add(egui::Label::new(RichText::new("Injects the .wraith container into a genuine image file").font(FontId::proportional(10.5)).color(TEXT_MUTED)).wrap());
                                 }
                             });
 
@@ -867,42 +853,42 @@ impl MirageApp {
 
             if self.encrypt_duress_enabled {
                 ui.add_space(4.0);
-                let pad_duress = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if pad_duress > 0.0 { ui.add_space(pad_duress); }
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(subbox_width);
                     Frame::none()
                         .fill(COLOR_SUB_BOX)
                         .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
                         .rounding(Rounding::same(8.0))
                         .inner_margin(Margin::same(10.0))
                         .show(ui, |ui| {
-                            ui.set_width(subbox_width - 20.0);
-                            ui.vertical_centered(|ui| {
-                                ui.horizontal(|ui| {
-                                    let total_w = ui.available_width();
-                                    let pad = (total_w - 340.0) / 2.0;
-                                    if pad > 0.0 { ui.add_space(pad); }
-                                    ui.label(RichText::new("Decoy Passphrase:").font(FontId::proportional(11.5)).color(TEXT_BODY).strong());
-                                    ui.add(egui::TextEdit::singleline(&mut self.encrypt_duress_password).password(true).desired_width(200.0));
-                                });
-                                ui.add_space(6.0);
-                                ui.horizontal(|ui| {
-                                    let total_w = ui.available_width();
-                                    let pad = (total_w - 320.0) / 2.0;
-                                    if pad > 0.0 { ui.add_space(pad); }
-                                    let pick_decoy_btn = egui::Button::new(RichText::new(" Select Decoy File... ").font(FontId::proportional(11.0)))
-                                        .fill(Color32::from_rgb(32, 24, 48))
-                                        .stroke(Stroke::new(1.0, BORDER_COLOR))
-                                        .rounding(Rounding::same(6.0));
+                            ui.vertical(|ui| {
+                                ui.vertical_centered(|ui| {
+                                    ui.horizontal(|ui| {
+                                        let total_w = ui.available_width();
+                                        let pad = (total_w - 340.0) / 2.0;
+                                        if pad > 0.0 { ui.add_space(pad); }
+                                        ui.label(RichText::new("Decoy Passphrase:").font(FontId::proportional(11.5)).color(TEXT_BODY).strong());
+                                        ui.add(egui::TextEdit::singleline(&mut self.encrypt_duress_password).password(true).desired_width(200.0));
+                                    });
+                                    ui.add_space(6.0);
+                                    ui.horizontal(|ui| {
+                                        let total_w = ui.available_width();
+                                        let pad = (total_w - 320.0) / 2.0;
+                                        if pad > 0.0 { ui.add_space(pad); }
+                                        let pick_decoy_btn = egui::Button::new(RichText::new(" Select Decoy File... ").font(FontId::proportional(11.0)))
+                                            .fill(Color32::from_rgb(32, 24, 48))
+                                            .stroke(Stroke::new(1.0, BORDER_COLOR))
+                                            .rounding(Rounding::same(6.0));
 
-                                    if ui.add(pick_decoy_btn).clicked() {
-                                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                            self.encrypt_duress_file = Some(path);
+                                        if ui.add(pick_decoy_btn).clicked() {
+                                            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                                self.encrypt_duress_file = Some(path);
+                                            }
                                         }
-                                    }
-                                    if let Some(df) = &self.encrypt_duress_file {
-                                        ui.label(RichText::new(format!("[OK] {}", df.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(11.0)).color(TEXT_HEAD));
-                                    }
+                                        if let Some(df) = &self.encrypt_duress_file {
+                                            ui.label(RichText::new(format!("[OK] {}", df.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(11.0)).color(TEXT_HEAD));
+                                        }
+                                    });
                                 });
                             });
                         });
@@ -1029,53 +1015,49 @@ impl MirageApp {
             card_header_centered(ui, "01", "ENCRYPTED ARCHIVE OR SHARES", "Load the .wraith container or .share parts");
 
             ui.vertical_centered(|ui| {
-                let pad = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-                    Frame::none()
-                        .fill(COLOR_SUB_BOX)
-                        .stroke(Stroke::new(1.0, if !self.decrypt_files.is_empty() { PURPLE_BRIGHT } else { BORDER_COLOR }))
-                        .rounding(Rounding::same(10.0))
-                        .inner_margin(Margin::symmetric(20.0, 14.0))
-                        .show(ui, |ui| {
-                            ui.set_width(subbox_width - 24.0);
-                            ui.vertical_centered(|ui| {
-                                let pick_btn = egui::Button::new(
-                                    RichText::new("  SELECT (.WRAITH / .SHARE)...  ")
+                ui.set_max_width(subbox_width);
+                Frame::none()
+                    .fill(COLOR_SUB_BOX)
+                    .stroke(Stroke::new(1.0, if !self.decrypt_files.is_empty() { PURPLE_BRIGHT } else { BORDER_COLOR }))
+                    .rounding(Rounding::same(10.0))
+                    .inner_margin(Margin::symmetric(20.0, 14.0))
+                    .show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            let pick_btn = egui::Button::new(
+                                RichText::new("  SELECT (.WRAITH / .SHARE)...  ")
+                                    .font(FontId::proportional(12.5))
+                                    .color(TEXT_HEAD)
+                                    .strong(),
+                            )
+                            .fill(Color32::from_rgb(38, 28, 56))
+                            .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
+                            .rounding(Rounding::same(10.0))
+                            .min_size(Vec2::new(220.0, 36.0));
+
+                            if ui.add(pick_btn).clicked() {
+                                if let Some(files) = rfd::FileDialog::new().pick_files() {
+                                    self.decrypt_files = files;
+                                }
+                            }
+
+                            ui.add_space(6.0);
+
+                            if !self.decrypt_files.is_empty() {
+                                ui.label(
+                                    RichText::new(format!("[OK] {} file(s) selected", self.decrypt_files.len()))
                                         .font(FontId::proportional(12.5))
-                                        .color(TEXT_HEAD)
+                                        .color(ACCENT_EMERALD)
                                         .strong(),
-                                )
-                                .fill(Color32::from_rgb(38, 28, 56))
-                                .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
-                                .rounding(Rounding::same(10.0))
-                                .min_size(Vec2::new(220.0, 36.0));
-
-                                if ui.add(pick_btn).clicked() {
-                                    if let Some(files) = rfd::FileDialog::new().pick_files() {
-                                        self.decrypt_files = files;
-                                    }
+                                );
+                                ui.add_space(2.0);
+                                for f in &self.decrypt_files {
+                                    ui.label(RichText::new(format!("• {:?}", f.file_name().unwrap_or_default())).font(FontId::monospace(10.5)).color(TEXT_MUTED));
                                 }
-
-                                ui.add_space(6.0);
-
-                                if !self.decrypt_files.is_empty() {
-                                    ui.label(
-                                        RichText::new(format!("[OK] {} file(s) selected", self.decrypt_files.len()))
-                                            .font(FontId::proportional(12.5))
-                                            .color(ACCENT_EMERALD)
-                                            .strong(),
-                                    );
-                                    ui.add_space(2.0);
-                                    for f in &self.decrypt_files {
-                                        ui.label(RichText::new(format!("• {:?}", f.file_name().unwrap_or_default())).font(FontId::monospace(10.5)).color(TEXT_MUTED));
-                                    }
-                                } else {
-                                    ui.label(RichText::new("No files loaded in memory").font(FontId::proportional(11.5)).color(TEXT_MUTED));
-                                }
-                            });
+                            } else {
+                                ui.label(RichText::new("No files loaded in memory").font(FontId::proportional(11.5)).color(TEXT_MUTED));
+                            }
                         });
-                });
+                    });
             });
         });
 
@@ -1087,15 +1069,13 @@ impl MirageApp {
             card_header_centered(ui, "02", "AUTHENTICATION CREDENTIALS", "AEAD authentication verified prior to ciphertext restoration");
 
             ui.vertical_centered(|ui| {
+                ui.set_max_width(row_width);
+
                 ui.label(RichText::new("Passphrase:").font(FontId::proportional(12.0)).color(TEXT_BODY).strong());
                 ui.add_space(3.0);
 
                 let input_w = row_width - 78.0;
-                let pad = ((ui.available_width() - row_width) / 2.0).max(0.0);
-
                 ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-
                     let mut edit = egui::TextEdit::singleline(&mut self.decrypt_password)
                         .font(FontId::proportional(12.5))
                         .desired_width(input_w)
@@ -1121,17 +1101,13 @@ impl MirageApp {
                 ui.label(RichText::new("Optional Second Factor Secret (2FA):").font(FontId::proportional(12.0)).color(TEXT_BODY).strong());
                 ui.add_space(3.0);
 
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.decrypt_2fa)
-                            .font(FontId::proportional(12.5))
-                            .password(true)
-                            .desired_width(row_width)
-                            .margin(Margin::symmetric(8.0, 6.0)),
-                    );
-                });
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.decrypt_2fa)
+                        .font(FontId::proportional(12.5))
+                        .password(true)
+                        .desired_width(row_width)
+                        .margin(Margin::symmetric(8.0, 6.0)),
+                );
             });
         });
 
@@ -1250,56 +1226,46 @@ impl MirageApp {
             card_header_centered(ui, "01", "SHAMIR SECRET SHARING 2-OF-3", "Split any secret payload into independent mathematical shares over GF(256)");
 
             ui.vertical_centered(|ui| {
-                let pad = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
-                    Frame::none()
-                        .fill(COLOR_SUB_BOX)
-                        .stroke(Stroke::new(1.0, if self.shamir_input_file.is_some() { PURPLE_BRIGHT } else { BORDER_COLOR }))
-                        .rounding(Rounding::same(10.0))
-                        .inner_margin(Margin::symmetric(20.0, 14.0))
-                        .show(ui, |ui| {
-                            ui.set_width(subbox_width - 24.0);
-                            ui.vertical_centered(|ui| {
-                                let pick_btn = egui::Button::new(
-                                    RichText::new("  SELECT FILE TO SPLIT...  ")
-                                        .font(FontId::proportional(12.5))
-                                        .color(TEXT_HEAD)
-                                        .strong(),
-                                )
-                                .fill(Color32::from_rgb(38, 28, 56))
-                                .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
-                                .rounding(Rounding::same(10.0))
-                                .min_size(Vec2::new(220.0, 36.0));
+                ui.set_max_width(subbox_width);
+                Frame::none()
+                    .fill(COLOR_SUB_BOX)
+                    .stroke(Stroke::new(1.0, if self.shamir_input_file.is_some() { PURPLE_BRIGHT } else { BORDER_COLOR }))
+                    .rounding(Rounding::same(10.0))
+                    .inner_margin(Margin::symmetric(20.0, 14.0))
+                    .show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            let pick_btn = egui::Button::new(
+                                RichText::new("  SELECT FILE TO SPLIT...  ")
+                                    .font(FontId::proportional(12.5))
+                                    .color(TEXT_HEAD)
+                                    .strong(),
+                            )
+                            .fill(Color32::from_rgb(38, 28, 56))
+                            .stroke(Stroke::new(1.0, PURPLE_BRIGHT))
+                            .rounding(Rounding::same(10.0))
+                            .min_size(Vec2::new(220.0, 36.0));
 
-                                if ui.add(pick_btn).clicked() {
-                                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                        self.shamir_input_file = Some(path);
-                                    }
+                            if ui.add(pick_btn).clicked() {
+                                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                    self.shamir_input_file = Some(path);
                                 }
+                            }
 
-                                ui.add_space(6.0);
+                            ui.add_space(6.0);
 
-                                if let Some(f) = &self.shamir_input_file {
-                                    ui.label(RichText::new(format!("[OK] {}", f.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(12.5)).color(ACCENT_EMERALD).strong());
-                                } else {
-                                    ui.label(RichText::new("No file selected").font(FontId::proportional(11.5)).color(TEXT_MUTED));
-                                }
-                            });
+                            if let Some(f) = &self.shamir_input_file {
+                                ui.label(RichText::new(format!("[OK] {}", f.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(12.5)).color(ACCENT_EMERALD).strong());
+                            } else {
+                                ui.label(RichText::new("No file selected").font(FontId::proportional(11.5)).color(TEXT_MUTED));
+                            }
                         });
-                });
+                    });
 
                 ui.add_space(10.0);
-                let slider_pad = ((ui.available_width() - 280.0) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if slider_pad > 0.0 { ui.add_space(slider_pad); }
-                    ui.add(egui::Slider::new(&mut self.shamir_threshold, 2..=5).text("Required Threshold (K)").text_color(TEXT_HEAD));
-                });
+                ui.set_max_width(280.0);
+                ui.add(egui::Slider::new(&mut self.shamir_threshold, 2..=5).text("Required Threshold (K)").text_color(TEXT_HEAD));
                 ui.add_space(3.0);
-                ui.horizontal(|ui| {
-                    if slider_pad > 0.0 { ui.add_space(slider_pad); }
-                    ui.add(egui::Slider::new(&mut self.shamir_total, 2..=10).text("Total Shares (N)").text_color(TEXT_HEAD));
-                });
+                ui.add(egui::Slider::new(&mut self.shamir_total, 2..=10).text("Total Shares (N)").text_color(TEXT_HEAD));
             });
 
             ui.add_space(14.0);
@@ -1351,16 +1317,14 @@ impl MirageApp {
             ui.add_space(10.0);
 
             for test in &self.kat_summary.tests {
-                let pad = ((ui.available_width() - subbox_width) / 2.0).max(0.0);
-                ui.horizontal(|ui| {
-                    if pad > 0.0 { ui.add_space(pad); }
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(subbox_width);
                     Frame::none()
                         .fill(COLOR_INPUT)
                         .stroke(Stroke::new(1.0, BORDER_COLOR))
                         .rounding(Rounding::same(6.0))
                         .inner_margin(Margin::symmetric(12.0, 8.0))
                         .show(ui, |ui| {
-                            ui.set_width(subbox_width - 24.0);
                             ui.horizontal(|ui| {
                                 if test.passed {
                                     ui.label(RichText::new(" PASS ").color(Color32::BLACK).background_color(ACCENT_EMERALD).font(FontId::monospace(10.0)).strong());
