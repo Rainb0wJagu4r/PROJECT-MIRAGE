@@ -124,7 +124,7 @@ impl Default for MirageApp {
             is_scrolled_to_bottom: false,
 
             logs: vec![(
-                "Motor Criptografico Rust Nativo Listo [Zero-Network / 100% Memory-Safe]".into(),
+                "Native Rust Cryptographic Engine Online [Zero-Network / 100% Memory-Safe]".into(),
                 PURPLE_BRIGHT,
             )],
             kat_summary,
@@ -143,7 +143,7 @@ impl MirageApp {
             self.encrypt_file = Some(path.clone());
             self.add_log(
                 format!(
-                    "Archivo cargado: {} ({})",
+                    "File loaded: {} ({})",
                     path.file_name().unwrap_or_default().to_string_lossy(),
                     format_bytes(bytes.len())
                 ),
@@ -196,8 +196,10 @@ fn card_frame() -> Frame {
 fn card_header_centered(ui: &mut egui::Ui, tag: &str, title: &str, subtitle: &str) {
     ui.vertical_centered(|ui| {
         ui.horizontal(|ui| {
-            let total_w = ui.available_width();
-            let pad = (total_w - 380.0) / 2.0;
+            let tag_w = 40.0;
+            let title_w = title.len() as f32 * 9.5;
+            let total_header_w = tag_w + title_w;
+            let pad = ((ui.available_width() - total_header_w) / 2.0).max(0.0);
             if pad > 0.0 {
                 ui.add_space(pad);
             }
@@ -206,14 +208,14 @@ fn card_header_centered(ui: &mut egui::Ui, tag: &str, title: &str, subtitle: &st
                 .rounding(Rounding::same(6.0))
                 .inner_margin(Margin::symmetric(8.0, 3.0))
                 .show(ui, |ui| {
-                    ui.label(RichText::new(tag).font(FontId::proportional(13.0)).color(Color32::WHITE).strong());
+                    ui.label(RichText::new(tag).font(FontId::proportional(12.5)).color(Color32::WHITE).strong());
                 });
             ui.add_space(6.0);
-            ui.label(RichText::new(title).font(FontId::proportional(17.0)).color(TEXT_HEAD).strong());
+            ui.label(RichText::new(title).font(FontId::proportional(16.0)).color(TEXT_HEAD).strong());
         });
         if !subtitle.is_empty() {
-            ui.add_space(4.0);
-            ui.label(RichText::new(subtitle).font(FontId::proportional(13.5)).color(TEXT_MUTED));
+            ui.add_space(3.0);
+            ui.label(RichText::new(subtitle).font(FontId::proportional(13.0)).color(TEXT_MUTED));
         }
     });
     ui.add_space(14.0);
@@ -256,23 +258,23 @@ fn render_option_toggle_card(
 
                 // Option description
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(title).font(FontId::proportional(14.0)).color(TEXT_HEAD).strong());
+                    ui.label(RichText::new(title).font(FontId::proportional(13.5)).color(TEXT_HEAD).strong());
                     ui.label(RichText::new(subtitle).font(FontId::proportional(12.0)).color(TEXT_MUTED));
                 });
 
                 // Toggle pill button on the right
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let (btn_text, btn_bg, btn_fg) = if *is_active {
-                        ("  ACTIVADO  ", PURPLE_MAIN, Color32::WHITE)
+                        ("  ENABLED  ", PURPLE_MAIN, Color32::WHITE)
                     } else {
-                        (" DESACTIVADO ", Color32::from_rgb(24, 18, 34), TEXT_MUTED)
+                        (" DISABLED ", Color32::from_rgb(24, 18, 34), TEXT_MUTED)
                     };
 
                     let toggle_btn = egui::Button::new(RichText::new(btn_text).font(FontId::monospace(11.5)).color(btn_fg).strong())
                         .fill(btn_bg)
                         .stroke(Stroke::new(1.0, if *is_active { PURPLE_LIGHT } else { BORDER_COLOR }))
                         .rounding(Rounding::same(14.0))
-                        .min_size(Vec2::new(115.0, 30.0));
+                        .min_size(Vec2::new(110.0, 30.0));
 
                     if ui.add(toggle_btn).clicked() {
                         *is_active = !*is_active;
@@ -315,67 +317,67 @@ impl eframe::App for MirageApp {
 
         let mut style = (*ctx.style()).clone();
         style.spacing.item_spacing = Vec2::new(10.0, 10.0);
-        style.spacing.button_padding = Vec2::new(14.0, 9.0);
+        style.spacing.button_padding = Vec2::new(14.0, 8.0);
         ctx.set_style(style);
 
         // Header Panel (Centered Hero Logo & Navigation)
         egui::TopBottomPanel::top("top_bar")
-            .frame(Frame::none().fill(COLOR_BG).inner_margin(Margin::symmetric(20.0, 18.0)))
+            .frame(Frame::none().fill(COLOR_BG).inner_margin(Margin::symmetric(20.0, 16.0)))
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     // 1. Centered Logo Image
                     if let Some(texture) = &self.logo_texture {
-                        ui.add(egui::Image::new(texture).fit_to_exact_size(Vec2::new(84.0, 84.0)).rounding(Rounding::same(14.0)));
-                        ui.add_space(8.0);
+                        ui.add(egui::Image::new(texture).fit_to_exact_size(Vec2::new(76.0, 76.0)).rounding(Rounding::same(14.0)));
+                        ui.add_space(6.0);
                     }
 
                     // 2. Centered App Title & Subtitle
                     ui.label(
                         RichText::new("PROJECT MIRAGE")
-                            .font(FontId::proportional(28.0))
+                            .font(FontId::proportional(24.0))
                             .color(TEXT_HEAD)
                             .strong(),
                     );
-                    ui.add_space(3.0);
+                    ui.add_space(2.0);
                     ui.label(
                         RichText::new("ARMORED CRYPTOSYSTEM // RUST CORE v2.2.0 (LTS)")
-                            .font(FontId::monospace(13.0))
+                            .font(FontId::monospace(12.0))
                             .color(PURPLE_GLOW),
                     );
 
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
 
                     // 3. Centered KAT Status Badge
                     let (badge_text, badge_fg, badge_bg) = if self.kat_summary.overall {
-                        ("● KAT AUDITADO: 100% ONLINE (AES-GCM, Camellia, ARIA, ChaCha20, Scrypt-HKDF)", ACCENT_EMERALD, Color32::from_rgb(10, 36, 26))
+                        ("[OK] KAT AUDITED: 100% ONLINE (AES-GCM, Camellia, ARIA, ChaCha20, Scrypt-HKDF)", ACCENT_EMERALD, Color32::from_rgb(10, 36, 26))
                     } else {
-                        ("! ERROR EN SUITE KAT", ACCENT_ROSE, Color32::from_rgb(45, 15, 20))
+                        ("[!] ERROR IN KAT SUITE", ACCENT_ROSE, Color32::from_rgb(45, 15, 20))
                     };
                     Frame::none()
                         .fill(badge_bg)
                         .stroke(Stroke::new(1.2, badge_fg))
                         .rounding(Rounding::same(8.0))
-                        .inner_margin(Margin::symmetric(14.0, 6.0))
+                        .inner_margin(Margin::symmetric(14.0, 5.0))
                         .show(ui, |ui| {
-                            ui.label(RichText::new(badge_text).font(FontId::monospace(12.0)).color(badge_fg).strong());
+                            ui.label(RichText::new(badge_text).font(FontId::monospace(11.5)).color(badge_fg).strong());
                         });
                 });
 
-                ui.add_space(18.0);
+                ui.add_space(16.0);
 
-                // 4. Centered Navigation Tab Bar
+                // 4. Centered Navigation Tab Bar in English
                 ui.vertical_centered(|ui| {
                     ui.horizontal_wrapped(|ui| {
                         let total_w = ui.available_width();
-                        let tab_btn_w = 170.0;
+                        let tab_btn_w = 165.0;
                         let pad = ((total_w - (tab_btn_w * 4.0 + 24.0)) / 2.0).max(0.0);
                         ui.add_space(pad);
 
                         let tabs = [
-                            (ActiveTab::Encrypt, "CIFRAR & ARMAR"),
-                            (ActiveTab::Decrypt, "DESCIFRAR"),
-                            (ActiveTab::Shamir, "SHAMIR 2-DE-3"),
-                            (ActiveTab::Diagnostics, "DIAGNOSTICO KAT"),
+                            (ActiveTab::Encrypt, "ENCRYPT & ARMOR"),
+                            (ActiveTab::Decrypt, "DECRYPT"),
+                            (ActiveTab::Shamir, "SHAMIR 2-OF-3"),
+                            (ActiveTab::Diagnostics, "KAT DIAGNOSTICS"),
                         ];
 
                         for (tab_type, title) in tabs {
@@ -386,14 +388,14 @@ impl eframe::App for MirageApp {
 
                             let btn = egui::Button::new(
                                 RichText::new(title)
-                                    .font(FontId::proportional(14.0))
+                                    .font(FontId::proportional(13.5))
                                     .color(text_color)
                                     .strong(),
                             )
                             .fill(bg_color)
                             .stroke(stroke)
-                            .rounding(Rounding::same(20.0))
-                            .min_size(Vec2::new(tab_btn_w, 38.0));
+                            .rounding(Rounding::same(18.0))
+                            .min_size(Vec2::new(tab_btn_w, 36.0));
 
                             if ui.add(btn).clicked() {
                                 self.active_tab = tab_type;
@@ -406,12 +408,12 @@ impl eframe::App for MirageApp {
 
         // Bottom Status Bar (Execution Log)
         egui::TopBottomPanel::bottom("bottom_bar")
-            .frame(Frame::none().fill(COLOR_CARD).inner_margin(Margin::symmetric(20.0, 10.0)).stroke(Stroke::new(1.0, BORDER_COLOR)))
+            .frame(Frame::none().fill(COLOR_CARD).inner_margin(Margin::symmetric(20.0, 8.0)).stroke(Stroke::new(1.0, BORDER_COLOR)))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("TERMINAL:").font(FontId::monospace(11.5)).color(PURPLE_BRIGHT).strong());
+                    ui.label(RichText::new("TERMINAL:").font(FontId::monospace(11.0)).color(PURPLE_BRIGHT).strong());
                     if let Some((msg, color)) = self.logs.last() {
-                        ui.label(RichText::new(msg).font(FontId::monospace(11.5)).color(*color));
+                        ui.label(RichText::new(msg).font(FontId::monospace(11.0)).color(*color));
                     }
                 });
             });
@@ -451,7 +453,7 @@ impl eframe::App for MirageApp {
                                 .rounding(Rounding::same(10.0))
                                 .inner_margin(Margin::symmetric(16.0, 12.0))
                                 .show(ui, |ui| {
-                                    ui.label(RichText::new(msg).font(FontId::proportional(14.5)).color(fg).strong());
+                                    ui.label(RichText::new(msg).font(FontId::proportional(14.0)).color(fg).strong());
                                 });
                             ui.add_space(10.0);
                         }
@@ -495,8 +497,8 @@ impl eframe::App for MirageApp {
                         .inner_margin(Margin::symmetric(14.0, 8.0))
                         .show(ui, |ui| {
                             let scroll_btn = egui::Button::new(
-                                RichText::new("  ▼ DESPLAZAR HACIA ABAJO  ")
-                                    .font(FontId::proportional(13.0))
+                                RichText::new("SCROLL DOWN")
+                                    .font(FontId::proportional(12.5))
                                     .color(Color32::WHITE)
                                     .strong(),
                             )
@@ -519,10 +521,9 @@ impl MirageApp {
         // Card 1: File Selection (Fully Centered)
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "01", "ARCHIVO A PROTEGER", "Selecciona el archivo confidencial que deseas cifrar");
+            card_header_centered(ui, "01", "PROTECTED FILE", "Select the confidential payload file to encrypt");
 
             ui.vertical_centered(|ui| {
-                // Centered File Drop/Picker Box
                 Frame::none()
                     .fill(COLOR_SUB_BOX)
                     .stroke(Stroke::new(1.2, if self.encrypt_file.is_some() { PURPLE_BRIGHT } else { BORDER_COLOR }))
@@ -532,15 +533,15 @@ impl MirageApp {
                         ui.set_width(inner_width - 32.0);
                         ui.vertical_centered(|ui| {
                             let pick_btn = egui::Button::new(
-                                RichText::new("  SELECCIONAR ARCHIVO...  ")
-                                    .font(FontId::proportional(15.0))
+                                RichText::new("  SELECT FILE...  ")
+                                    .font(FontId::proportional(14.0))
                                     .color(TEXT_HEAD)
                                     .strong(),
                             )
                             .fill(Color32::from_rgb(38, 28, 56))
                             .stroke(Stroke::new(1.2, PURPLE_BRIGHT))
                             .rounding(Rounding::same(12.0))
-                            .min_size(Vec2::new(260.0, 44.0));
+                            .min_size(Vec2::new(240.0, 42.0));
 
                             if ui.add(pick_btn).clicked() {
                                 if let Some(path) = rfd::FileDialog::new().pick_file() {
@@ -552,15 +553,15 @@ impl MirageApp {
 
                             if let Some(file) = &self.encrypt_file {
                                 ui.label(
-                                    RichText::new(format!("● {}", file.file_name().unwrap_or_default().to_string_lossy()))
-                                        .font(FontId::proportional(16.0))
+                                    RichText::new(format!("[OK] {}", file.file_name().unwrap_or_default().to_string_lossy()))
+                                        .font(FontId::proportional(15.0))
                                         .color(ACCENT_EMERALD)
                                         .strong(),
                                 );
                                 ui.add_space(2.0);
                                 ui.label(
-                                    RichText::new(format!("Tamano: {}", format_bytes(self.encrypt_file_size)))
-                                        .font(FontId::proportional(13.5))
+                                    RichText::new(format!("Size: {}", format_bytes(self.encrypt_file_size)))
+                                        .font(FontId::proportional(13.0))
                                         .color(TEXT_MUTED),
                                 );
 
@@ -573,15 +574,15 @@ impl MirageApp {
                                         .inner_margin(Margin::symmetric(14.0, 8.0))
                                         .show(ui, |ui| {
                                             ui.horizontal_wrapped(|ui| {
-                                                ui.label(RichText::new("SHA3-256:").font(FontId::monospace(12.0)).color(PURPLE_LIGHT).strong());
-                                                ui.label(RichText::new(&self.encrypt_file_hash).font(FontId::monospace(12.0)).color(TEXT_HEAD));
+                                                ui.label(RichText::new("SHA3-256:").font(FontId::monospace(11.5)).color(PURPLE_LIGHT).strong());
+                                                ui.label(RichText::new(&self.encrypt_file_hash).font(FontId::monospace(11.5)).color(TEXT_HEAD));
                                             });
                                         });
                                 }
                             } else {
                                 ui.label(
-                                    RichText::new("Ningun archivo cargado en memoria")
-                                        .font(FontId::proportional(13.5))
+                                    RichText::new("No file loaded in memory")
+                                        .font(FontId::proportional(13.0))
                                         .color(TEXT_MUTED),
                                 );
                             }
@@ -592,37 +593,39 @@ impl MirageApp {
 
         ui.add_space(14.0);
 
-        // Card 2: Password & Entropy (Fully Centered)
+        // Card 2: Password & Entropy (Fully Centered with Equal Sizing)
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "02", "AUTENTICACION & ENTROPIA", "Clave maestra blindada con Scrypt (N=131072, r=8, p=1)");
+            card_header_centered(ui, "02", "AUTHENTICATION & ENTROPY", "Master passphrase derived via Scrypt (N=131072, r=8, p=1)");
 
             ui.vertical_centered(|ui| {
-                // Password Field Centered
-                ui.label(RichText::new("Contrasena Maestra de Cifrado:").font(FontId::proportional(14.5)).color(TEXT_BODY).strong());
+                let center_box_w = 460.0_f32.min(inner_width - 32.0);
+
+                // Password row
+                ui.label(RichText::new("Master Passphrase:").font(FontId::proportional(14.0)).color(TEXT_BODY).strong());
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
                     let total_w = ui.available_width();
-                    let field_w = 460.0_f32.min(total_w - 100.0);
-                    let pad = ((total_w - (field_w + 90.0)) / 2.0).max(0.0);
-                    ui.add_space(pad);
+                    let pad = ((total_w - center_box_w) / 2.0).max(0.0);
+                    if pad > 0.0 { ui.add_space(pad); }
 
+                    let input_w = center_box_w - 90.0;
                     let mut edit = egui::TextEdit::singleline(&mut self.encrypt_password)
-                        .font(FontId::proportional(15.0))
-                        .desired_width(field_w)
-                        .margin(Margin::symmetric(12.0, 10.0));
+                        .font(FontId::proportional(14.0))
+                        .desired_width(input_w)
+                        .margin(Margin::symmetric(10.0, 8.0));
                     if !self.encrypt_show_password {
                         edit = edit.password(true);
                     }
                     ui.add(edit);
 
-                    let eye_btn_text = if self.encrypt_show_password { " OCULTAR " } else { " MOSTRAR " };
-                    let eye_btn = egui::Button::new(RichText::new(eye_btn_text).font(FontId::proportional(12.5)).strong())
+                    let eye_btn_text = if self.encrypt_show_password { " HIDE " } else { " SHOW " };
+                    let eye_btn = egui::Button::new(RichText::new(eye_btn_text).font(FontId::proportional(12.0)).strong())
                         .fill(Color32::from_rgb(26, 20, 38))
                         .stroke(Stroke::new(1.0, BORDER_COLOR))
                         .rounding(Rounding::same(8.0))
-                        .min_size(Vec2::new(80.0, 38.0));
+                        .min_size(Vec2::new(80.0, 36.0));
                     if ui.add(eye_btn).clicked() {
                         self.encrypt_show_password = !self.encrypt_show_password;
                     }
@@ -634,35 +637,33 @@ impl MirageApp {
                     let (bits_label, color, fill_pct) = match assessment {
                         Ok(bits) => {
                             let pct = ((bits as f32) / 100.0).clamp(0.0, 1.0);
-                            (format!("● Fortaleza: ~{bits} bits de entropia (Cumple politica de seguridad)"), ACCENT_EMERALD, pct)
+                            (format!("[OK] Strength: ~{bits} bits of entropy (Meets security policy)"), ACCENT_EMERALD, pct)
                         }
-                        Err(err) => (format!("! Aviso: {err}"), ACCENT_ROSE, 0.25),
+                        Err(err) => (format!("[!] Warning: {err}"), ACCENT_ROSE, 0.25),
                     };
 
-                    ui.label(RichText::new(bits_label).font(FontId::monospace(12.0)).color(color).strong());
+                    ui.label(RichText::new(bits_label).font(FontId::monospace(11.5)).color(color).strong());
                     ui.add_space(3.0);
-                    let bar_w = 460.0_f32.min(ui.available_width() - 40.0);
-                    ui.add_sized([bar_w, 8.0], egui::ProgressBar::new(fill_pct).fill(color).animate(false));
+                    ui.add_sized([center_box_w, 8.0], egui::ProgressBar::new(fill_pct).fill(color).animate(false));
                 }
 
-                ui.add_space(14.0);
+                ui.add_space(12.0);
 
-                // 2FA Symmetric Field Centered
-                ui.label(RichText::new("Segundo Secreto 2FA (Opcional):").font(FontId::proportional(14.5)).color(TEXT_BODY).strong());
+                // 2FA Symmetric Field
+                ui.label(RichText::new("Optional Second Factor Secret (2FA):").font(FontId::proportional(14.0)).color(TEXT_BODY).strong());
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
                     let total_w = ui.available_width();
-                    let field_w = 460.0_f32.min(total_w - 40.0);
-                    let pad = ((total_w - field_w) / 2.0).max(0.0);
-                    ui.add_space(pad);
+                    let pad = ((total_w - center_box_w) / 2.0).max(0.0);
+                    if pad > 0.0 { ui.add_space(pad); }
 
                     ui.add(
                         egui::TextEdit::singleline(&mut self.encrypt_2fa)
-                            .font(FontId::proportional(15.0))
+                            .font(FontId::proportional(14.0))
                             .password(true)
-                            .desired_width(field_w)
-                            .margin(Margin::symmetric(12.0, 10.0)),
+                            .desired_width(center_box_w)
+                            .margin(Margin::symmetric(10.0, 8.0)),
                     );
                 });
             });
@@ -673,7 +674,7 @@ impl MirageApp {
         // Card 3: Cryptographic Configuration & Mirage-C4 Cascade Breakdown
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "03", "SUITE CRIPTOGRAFICA & OPCIONES", "Configura el algoritmo core y los modulos de blindaje");
+            card_header_centered(ui, "03", "CRYPTOGRAPHIC SUITE & OPTIONS", "Configure core cipher cascade and armored defense modules");
 
             ui.vertical_centered(|ui| {
                 ui.horizontal(|ui| {
@@ -682,22 +683,22 @@ impl MirageApp {
                     if pad > 0.0 {
                         ui.add_space(pad);
                     }
-                    ui.label(RichText::new("Algoritmo de Cifrado:").font(FontId::proportional(15.0)).color(TEXT_BODY).strong());
+                    ui.label(RichText::new("Cipher Algorithm:").font(FontId::proportional(14.0)).color(TEXT_BODY).strong());
                     egui::ComboBox::from_id_salt("algo_select_native")
                         .selected_text(match self.encrypt_algorithm {
-                            Algorithm::CascadeC4 => "Mirage-C4 v2 (Cascada No Lineal de 4 Capas)",
-                            Algorithm::AesGcm => "AES-256-GCM (Estandar NIST Unico)",
+                            Algorithm::CascadeC4 => "Mirage-C4 v2 (4-Layer Non-Linear Cascade)",
+                            Algorithm::AesGcm => "AES-256-GCM (NIST Single Standard)",
                         })
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.encrypt_algorithm,
                                 Algorithm::CascadeC4,
-                                "Mirage-C4 v2 (Cascada No Lineal de 4 Capas)",
+                                "Mirage-C4 v2 (4-Layer Non-Linear Cascade)",
                             );
                             ui.selectable_value(
                                 &mut self.encrypt_algorithm,
                                 Algorithm::AesGcm,
-                                "AES-256-GCM (Estandar NIST Unico)",
+                                "AES-256-GCM (NIST Single Standard)",
                             );
                         });
                 });
@@ -715,8 +716,8 @@ impl MirageApp {
                         ui.set_width(inner_width - 32.0);
                         ui.vertical_centered(|ui| {
                             ui.label(
-                                RichText::new("ARQUITECTURA DE LA CASCADA MIRAGE-C4 v2:")
-                                    .font(FontId::proportional(14.0))
+                                RichText::new("MIRAGE-C4 v2 CASCADE ARCHITECTURE:")
+                                    .font(FontId::proportional(13.5))
                                     .color(PURPLE_LIGHT)
                                     .strong(),
                             );
@@ -724,10 +725,10 @@ impl MirageApp {
                         ui.add_space(8.0);
 
                         let layers = [
-                            ("Capa 1", "Camellia-256-CBC", "Cifrado de Bloque de 128-bit (RFC 3713 / NESSIE)"),
-                            ("Capa 2", "ChaCha20", "Cifrado de Flujo rapido con matriz de 512-bit (RFC 8439)"),
-                            ("Capa 3", "ARIA-256-CBC", "Cifrado de Bloque estandar de Corea (RFC 5794)"),
-                            ("Capa 4", "AES-256-GCM", "Cifrado Autenticado con Etiqueta AAD (NIST SP 800-38D)"),
+                            ("Layer 1", "Camellia-256-CBC", "128-bit Block Cipher (RFC 3713 / NESSIE)"),
+                            ("Layer 2", "ChaCha20", "High-speed Stream Cipher with 512-bit state (RFC 8439)"),
+                            ("Layer 3", "ARIA-256-CBC", "Korean Standard 128-bit Block Cipher (RFC 5794)"),
+                            ("Layer 4", "AES-256-GCM", "Authenticated Cipher with Context-Bound AAD Tag (NIST SP 800-38D)"),
                         ];
 
                         for (num, algo, desc) in layers {
@@ -738,18 +739,18 @@ impl MirageApp {
                                     .rounding(Rounding::same(5.0))
                                     .inner_margin(Margin::symmetric(6.0, 2.0))
                                     .show(ui, |ui| {
-                                        ui.label(RichText::new(num).font(FontId::monospace(11.5)).color(PURPLE_BRIGHT).strong());
+                                        ui.label(RichText::new(num).font(FontId::monospace(11.0)).color(PURPLE_BRIGHT).strong());
                                     });
-                                ui.label(RichText::new(algo).font(FontId::proportional(13.5)).color(TEXT_HEAD).strong());
-                                ui.label(RichText::new(format!("-> {}", desc)).font(FontId::proportional(12.5)).color(TEXT_MUTED));
+                                ui.label(RichText::new(algo).font(FontId::proportional(13.0)).color(TEXT_HEAD).strong());
+                                ui.label(RichText::new(format!("-> {}", desc)).font(FontId::proportional(12.0)).color(TEXT_MUTED));
                             });
                             ui.add_space(2.0);
                         }
 
                         ui.add_space(6.0);
                         ui.label(
-                            RichText::new("• KDF Blindado: Scrypt (N=131072, r=8, p=1) + HKDF-SHA256 con subllaves separadas y zeroizacion en RAM.")
-                                .font(FontId::proportional(12.0))
+                            RichText::new("• Armored KDF: Scrypt (N=131072, r=8, p=1) + HKDF-SHA256 with domain-separated subkeys and RAM zeroization.")
+                                .font(FontId::proportional(11.5))
                                 .color(TEXT_MUTED),
                         );
                     });
@@ -757,16 +758,16 @@ impl MirageApp {
 
             ui.add_space(14.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("MODULOS DE PROTECCION AVANZADA:").font(FontId::proportional(13.5)).color(PURPLE_LIGHT).strong());
+                ui.label(RichText::new("ADVANCED DEFENSE MODULES:").font(FontId::proportional(13.0)).color(PURPLE_LIGHT).strong());
             });
             ui.add_space(6.0);
 
-            // Centered Option Cards
+            // Centered Option Cards in English
             render_option_toggle_card(
                 ui,
                 "PADME",
-                "Cuantizacion de Tamano Padme",
-                "Protege contra filtracion por longitud del archivo (<= 12% sobrecoste - PETS 2019)",
+                "Padme Length Quantization",
+                "Mitigates traffic size leakage (<= 12% overhead - PETS 2019 standard)",
                 &mut self.encrypt_padme,
             );
 
@@ -774,8 +775,8 @@ impl MirageApp {
             render_option_toggle_card(
                 ui,
                 "SHAMIR",
-                "Division Secreta 2-de-3 (GF-256)",
-                "Genera 3 fragmentos matematicos independientes; requiere cualesquiera 2 para descifrar",
+                "2-of-3 Secret Sharing (GF-256)",
+                "Generates 3 independent mathematical shares; any 2 required to restore",
                 &mut self.encrypt_shamir,
             );
 
@@ -799,28 +800,28 @@ impl MirageApp {
                         ui.add_space(8.0);
 
                         ui.vertical(|ui| {
-                            ui.label(RichText::new("Esteganografia Portadora (PNG / JPEG)").font(FontId::proportional(14.0)).color(TEXT_HEAD).strong());
+                            ui.label(RichText::new("Carrier Steganography (PNG / JPEG)").font(FontId::proportional(13.5)).color(TEXT_HEAD).strong());
                             if let Some(c) = &self.encrypt_carrier_file {
-                                ui.label(RichText::new(format!("● Portadora: {}", c.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(12.5)).color(ACCENT_EMERALD).strong());
+                                ui.label(RichText::new(format!("[OK] Carrier: {}", c.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(12.5)).color(ACCENT_EMERALD).strong());
                             } else {
-                                ui.label(RichText::new("Inyecta el contenedor .wraith dentro de una imagen real").font(FontId::proportional(12.0)).color(TEXT_MUTED));
+                                ui.label(RichText::new("Injects the .wraith container into a genuine image file").font(FontId::proportional(12.0)).color(TEXT_MUTED));
                             }
                         });
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if self.encrypt_carrier_file.is_some() {
-                                if ui.button(RichText::new(" [X] REMOVER ").font(FontId::monospace(11.0)).color(ACCENT_ROSE)).clicked() {
+                                if ui.button(RichText::new(" [X] REMOVE ").font(FontId::monospace(11.0)).color(ACCENT_ROSE)).clicked() {
                                     self.encrypt_carrier_file = None;
                                 }
                             } else {
-                                let stego_btn = egui::Button::new(RichText::new("  ELEGIR IMAGEN...  ").font(FontId::proportional(12.5)).strong())
+                                let stego_btn = egui::Button::new(RichText::new("  CHOOSE IMAGE...  ").font(FontId::proportional(12.0)).strong())
                                     .fill(Color32::from_rgb(32, 24, 48))
                                     .stroke(Stroke::new(1.0, BORDER_COLOR))
                                     .rounding(Rounding::same(12.0));
 
                                 if ui.add(stego_btn).clicked() {
                                     if let Some(path) = rfd::FileDialog::new()
-                                        .add_filter("Imagenes", &["png", "jpg", "jpeg"])
+                                        .add_filter("Images", &["png", "jpg", "jpeg"])
                                         .pick_file()
                                     {
                                         self.encrypt_carrier_file = Some(path);
@@ -836,8 +837,8 @@ impl MirageApp {
             render_option_toggle_card(
                 ui,
                 "DURESS",
-                "Modo Coaccion / Documento Senuelo",
-                "Desbloquea un archivo trampa inofensivo ante contrasenas forzadas",
+                "Duress Decoy Mode",
+                "Unlocks a harmless decoy file when forced under duress",
                 &mut self.encrypt_duress_enabled,
             );
 
@@ -854,7 +855,7 @@ impl MirageApp {
                                 let total_w = ui.available_width();
                                 let pad = (total_w - 420.0) / 2.0;
                                 if pad > 0.0 { ui.add_space(pad); }
-                                ui.label(RichText::new("Contrasena Senuelo:").font(FontId::proportional(14.0)).color(TEXT_BODY).strong());
+                                ui.label(RichText::new("Decoy Passphrase:").font(FontId::proportional(13.5)).color(TEXT_BODY).strong());
                                 ui.add(egui::TextEdit::singleline(&mut self.encrypt_duress_password).password(true).desired_width(240.0));
                             });
                             ui.add_space(8.0);
@@ -862,7 +863,7 @@ impl MirageApp {
                                 let total_w = ui.available_width();
                                 let pad = (total_w - 380.0) / 2.0;
                                 if pad > 0.0 { ui.add_space(pad); }
-                                let pick_decoy_btn = egui::Button::new(RichText::new("  Seleccionar Archivo Senuelo...  ").font(FontId::proportional(13.0)))
+                                let pick_decoy_btn = egui::Button::new(RichText::new("  Select Decoy File...  ").font(FontId::proportional(12.5)))
                                     .fill(Color32::from_rgb(32, 24, 48))
                                     .stroke(Stroke::new(1.0, BORDER_COLOR))
                                     .rounding(Rounding::same(8.0));
@@ -873,7 +874,7 @@ impl MirageApp {
                                     }
                                 }
                                 if let Some(df) = &self.encrypt_duress_file {
-                                    ui.label(RichText::new(format!("✓ {}", df.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(13.0)).color(TEXT_HEAD));
+                                    ui.label(RichText::new(format!("[OK] {}", df.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(12.5)).color(TEXT_HEAD));
                                 }
                             });
                         });
@@ -883,19 +884,19 @@ impl MirageApp {
 
         ui.add_space(20.0);
 
-        // Huge Action Button Centered (Full Width matching card, 54px height)
+        // Action Button Centered (Full Width matching card, 50px height)
         let can_encrypt = self.encrypt_file.is_some() && !self.encrypt_password.is_empty();
         ui.add_enabled_ui(can_encrypt, |ui| {
             let btn = egui::Button::new(
-                RichText::new("  CIFRAR CONTENEDOR .WRAITH  ")
-                    .font(FontId::proportional(17.0))
+                RichText::new("  ENCRYPT .WRAITH CONTAINER  ")
+                    .font(FontId::proportional(16.0))
                     .color(Color32::WHITE)
                     .strong(),
             )
             .fill(PURPLE_MAIN)
             .stroke(Stroke::new(1.5, PURPLE_LIGHT))
             .rounding(Rounding::same(14.0))
-            .min_size(Vec2::new(card_width, 54.0));
+            .min_size(Vec2::new(card_width, 50.0));
 
             if ui.add(btn).clicked() {
                 self.perform_encryption();
@@ -906,8 +907,8 @@ impl MirageApp {
     fn perform_encryption(&mut self) {
         let Some(file_path) = self.encrypt_file.clone() else { return };
         let Ok(file_bytes) = fs::read(&file_path) else {
-            self.add_log("Error al leer archivo de origen.", ACCENT_ROSE);
-            self.last_action_banner = Some(("Error al leer archivo de origen.".into(), false));
+            self.add_log("Error reading source payload file.", ACCENT_ROSE);
+            self.last_action_banner = Some(("Error reading source payload file.".into(), false));
             return;
         };
 
@@ -915,7 +916,7 @@ impl MirageApp {
         let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
 
         let Ok(payload) = serialize_payload(&filename, &file_bytes, 0) else {
-            self.add_log("Error al serializar el payload.", ACCENT_ROSE);
+            self.add_log("Error serializing payload.", ACCENT_ROSE);
             return;
         };
 
@@ -946,8 +947,8 @@ impl MirageApp {
             Ok(res) => res,
             Err(e) => {
                 let err_msg = e.public_message();
-                self.add_log(format!("Fallo de cifrado: {}", err_msg), ACCENT_ROSE);
-                self.last_action_banner = Some((format!("Fallo de cifrado: {err_msg}"), false));
+                self.add_log(format!("Encryption failed: {}", err_msg), ACCENT_ROSE);
+                self.last_action_banner = Some((format!("Encryption failed: {err_msg}"), false));
                 return;
             }
         };
@@ -969,21 +970,21 @@ impl MirageApp {
             for (i, share) in shares.iter().enumerate() {
                 let share_path = parent.join(format!("{stem}.part{}.share", i + 1));
                 fs::write(&share_path, share).unwrap();
-                self.add_log(format!("Fragmento guardado: {:?}", share_path), ACCENT_EMERALD);
+                self.add_log(format!("Share saved: {:?}", share_path), ACCENT_EMERALD);
             }
-            self.last_action_banner = Some((format!("Fragmentacion 2-de-3 completada exitosamente ({elapsed_ms:.1} ms)"), true));
+            self.last_action_banner = Some((format!("2-of-3 Shamir secret sharing completed ({elapsed_ms:.1} ms)"), true));
         } else {
             let out_path = file_path.with_extension("wraith");
             if let Err(e) = fs::write(&out_path, &final_data) {
-                self.add_log(format!("Error al escribir archivo: {e}"), ACCENT_ROSE);
-                self.last_action_banner = Some((format!("Error al escribir archivo: {e}"), false));
+                self.add_log(format!("Error writing output file: {e}"), ACCENT_ROSE);
+                self.last_action_banner = Some((format!("Error writing output file: {e}"), false));
                 return;
             }
             self.add_log(
-                format!("Guardado: {:?} ({elapsed_ms:.1} ms)", out_path),
+                format!("Saved: {:?} ({elapsed_ms:.1} ms)", out_path),
                 ACCENT_EMERALD,
             );
-            self.last_action_banner = Some((format!("Archivo cifrado guardado en {:?} ({elapsed_ms:.1} ms)", out_path.file_name().unwrap_or_default()), true));
+            self.last_action_banner = Some((format!("Encrypted container saved to {:?} ({elapsed_ms:.1} ms)", out_path.file_name().unwrap_or_default()), true));
         }
     }
 
@@ -993,7 +994,7 @@ impl MirageApp {
         // Card 1: Decrypt File Selection Centered
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "01", "ARCHIVO CIFRADO O FRAGMENTOS", "Carga el contenedor .wraith o las partes .share");
+            card_header_centered(ui, "01", "ENCRYPTED ARCHIVE OR SHARES", "Load the .wraith container or .share parts");
 
             ui.vertical_centered(|ui| {
                 Frame::none()
@@ -1005,15 +1006,15 @@ impl MirageApp {
                         ui.set_width(inner_width - 32.0);
                         ui.vertical_centered(|ui| {
                             let pick_btn = egui::Button::new(
-                                RichText::new("  SELECCIONAR (.WRAITH / .SHARE)...  ")
-                                    .font(FontId::proportional(15.0))
+                                RichText::new("  SELECT (.WRAITH / .SHARE)...  ")
+                                    .font(FontId::proportional(14.0))
                                     .color(TEXT_HEAD)
                                     .strong(),
                             )
                             .fill(Color32::from_rgb(38, 28, 56))
                             .stroke(Stroke::new(1.2, PURPLE_BRIGHT))
                             .rounding(Rounding::same(12.0))
-                            .min_size(Vec2::new(280.0, 44.0));
+                            .min_size(Vec2::new(260.0, 42.0));
 
                             if ui.add(pick_btn).clicked() {
                                 if let Some(files) = rfd::FileDialog::new().pick_files() {
@@ -1025,17 +1026,17 @@ impl MirageApp {
 
                             if !self.decrypt_files.is_empty() {
                                 ui.label(
-                                    RichText::new(format!("● {} archivo(s) seleccionado(s)", self.decrypt_files.len()))
-                                        .font(FontId::proportional(15.0))
+                                    RichText::new(format!("[OK] {} file(s) selected", self.decrypt_files.len()))
+                                        .font(FontId::proportional(14.5))
                                         .color(ACCENT_EMERALD)
                                         .strong(),
                                 );
                                 ui.add_space(4.0);
                                 for f in &self.decrypt_files {
-                                    ui.label(RichText::new(format!("• {:?}", f.file_name().unwrap_or_default())).font(FontId::monospace(12.0)).color(TEXT_MUTED));
+                                    ui.label(RichText::new(format!("• {:?}", f.file_name().unwrap_or_default())).font(FontId::monospace(11.5)).color(TEXT_MUTED));
                                 }
                             } else {
-                                ui.label(RichText::new("Ningun archivo cargado").font(FontId::proportional(13.5)).color(TEXT_MUTED));
+                                ui.label(RichText::new("No files loaded in memory").font(FontId::proportional(13.0)).color(TEXT_MUTED));
                             }
                         });
                     });
@@ -1047,55 +1048,56 @@ impl MirageApp {
         // Card 2: Credentials Centered
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "02", "CREDENCIALES DE DESBLOQUEO", "Autenticacion AEAD con verificacion previa a la restauracion");
+            card_header_centered(ui, "02", "AUTHENTICATION CREDENTIALS", "AEAD authentication verified prior to ciphertext restoration");
 
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Contrasena de Desbloqueo:").font(FontId::proportional(14.5)).color(TEXT_BODY).strong());
+                let center_box_w = 460.0_f32.min(inner_width - 32.0);
+
+                ui.label(RichText::new("Passphrase:").font(FontId::proportional(14.0)).color(TEXT_BODY).strong());
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
                     let total_w = ui.available_width();
-                    let field_w = 460.0_f32.min(total_w - 100.0);
-                    let pad = ((total_w - (field_w + 90.0)) / 2.0).max(0.0);
-                    ui.add_space(pad);
+                    let pad = ((total_w - center_box_w) / 2.0).max(0.0);
+                    if pad > 0.0 { ui.add_space(pad); }
 
+                    let input_w = center_box_w - 90.0;
                     let mut edit = egui::TextEdit::singleline(&mut self.decrypt_password)
-                        .font(FontId::proportional(15.0))
-                        .desired_width(field_w)
-                        .margin(Margin::symmetric(12.0, 10.0));
+                        .font(FontId::proportional(14.0))
+                        .desired_width(input_w)
+                        .margin(Margin::symmetric(10.0, 8.0));
                     if !self.decrypt_show_password {
                         edit = edit.password(true);
                     }
                     ui.add(edit);
 
-                    let eye_btn_text = if self.decrypt_show_password { " OCULTAR " } else { " MOSTRAR " };
-                    let eye_btn = egui::Button::new(RichText::new(eye_btn_text).font(FontId::proportional(12.5)).strong())
+                    let eye_btn_text = if self.decrypt_show_password { " HIDE " } else { " SHOW " };
+                    let eye_btn = egui::Button::new(RichText::new(eye_btn_text).font(FontId::proportional(12.0)).strong())
                         .fill(Color32::from_rgb(26, 20, 38))
                         .stroke(Stroke::new(1.0, BORDER_COLOR))
                         .rounding(Rounding::same(8.0))
-                        .min_size(Vec2::new(80.0, 38.0));
+                        .min_size(Vec2::new(80.0, 36.0));
                     if ui.add(eye_btn).clicked() {
                         self.decrypt_show_password = !self.decrypt_show_password;
                     }
                 });
 
-                ui.add_space(14.0);
+                ui.add_space(12.0);
 
-                ui.label(RichText::new("Segundo Secreto 2FA (si aplica):").font(FontId::proportional(14.5)).color(TEXT_BODY).strong());
+                ui.label(RichText::new("Optional Second Factor Secret (2FA):").font(FontId::proportional(14.0)).color(TEXT_BODY).strong());
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
                     let total_w = ui.available_width();
-                    let field_w = 460.0_f32.min(total_w - 40.0);
-                    let pad = ((total_w - field_w) / 2.0).max(0.0);
-                    ui.add_space(pad);
+                    let pad = ((total_w - center_box_w) / 2.0).max(0.0);
+                    if pad > 0.0 { ui.add_space(pad); }
 
                     ui.add(
                         egui::TextEdit::singleline(&mut self.decrypt_2fa)
-                            .font(FontId::proportional(15.0))
+                            .font(FontId::proportional(14.0))
                             .password(true)
-                            .desired_width(field_w)
-                            .margin(Margin::symmetric(12.0, 10.0)),
+                            .desired_width(center_box_w)
+                            .margin(Margin::symmetric(10.0, 8.0)),
                     );
                 });
             });
@@ -1106,15 +1108,15 @@ impl MirageApp {
         let can_decrypt = !self.decrypt_files.is_empty() && !self.decrypt_password.is_empty();
         ui.add_enabled_ui(can_decrypt, |ui| {
             let btn = egui::Button::new(
-                RichText::new("  DESCIFRAR Y RESTAURAR ARCHIVO  ")
-                    .font(FontId::proportional(17.0))
+                RichText::new("  DECRYPT & RESTORE PAYLOAD  ")
+                    .font(FontId::proportional(16.0))
                     .color(Color32::WHITE)
                     .strong(),
             )
             .fill(Color32::from_rgb(16, 130, 85))
             .stroke(Stroke::new(1.5, ACCENT_EMERALD))
             .rounding(Rounding::same(14.0))
-            .min_size(Vec2::new(card_width, 54.0));
+            .min_size(Vec2::new(card_width, 50.0));
 
             if ui.add(btn).clicked() {
                 self.perform_decryption();
@@ -1135,8 +1137,8 @@ impl MirageApp {
                 Ok(d) => d,
                 Err(e) => {
                     let err_msg = e.public_message();
-                    self.add_log(format!("Error en fragmentos: {}", err_msg), ACCENT_ROSE);
-                    self.last_action_banner = Some((format!("Error en fragmentos: {err_msg}"), false));
+                    self.add_log(format!("Share combination error: {}", err_msg), ACCENT_ROSE);
+                    self.last_action_banner = Some((format!("Share combination error: {err_msg}"), false));
                     return;
                 }
             }
@@ -1144,8 +1146,8 @@ impl MirageApp {
             match fs::read(&self.decrypt_files[0]) {
                 Ok(d) => d,
                 Err(e) => {
-                    self.add_log(format!("Error al leer archivo: {e}"), ACCENT_ROSE);
-                    self.last_action_banner = Some((format!("Error al leer archivo: {e}"), false));
+                    self.add_log(format!("Error reading archive: {e}"), ACCENT_ROSE);
+                    self.last_action_banner = Some((format!("Error reading archive: {e}"), false));
                     return;
                 }
             }
@@ -1153,7 +1155,7 @@ impl MirageApp {
 
         let (envelope, was_steg) = extract_from_carrier(&raw_data).unwrap_or((raw_data, false));
         if was_steg {
-            self.add_log("Contenedor extraido de imagen portadora.", PURPLE_BRIGHT);
+            self.add_log("Container extracted from carrier image.", PURPLE_BRIGHT);
         }
 
         let sf_opt = if self.decrypt_2fa.is_empty() { None } else { Some(self.decrypt_2fa.as_str()) };
@@ -1169,18 +1171,18 @@ impl MirageApp {
             Ok(d) => d,
             Err(e) => {
                 let err_msg = e.public_message();
-                self.add_log(format!("Fallo de autenticacion: {}", err_msg), ACCENT_ROSE);
-                self.last_action_banner = Some((format!("Fallo de autenticacion: {err_msg}"), false));
+                self.add_log(format!("Authentication failed: {}", err_msg), ACCENT_ROSE);
+                self.last_action_banner = Some((format!("Authentication failed: {err_msg}"), false));
                 return;
             }
         };
 
         if dec.is_duress {
-            self.add_log("AVISO: Contenido senuelo restaurado (modo coaccion).", ACCENT_AMBER);
+            self.add_log("NOTICE: Decoy payload restored (duress mode).", ACCENT_AMBER);
         }
 
         let Ok(payload) = deserialize_payload(&dec.payload) else {
-            self.add_log("Error al procesar payload interno.", ACCENT_ROSE);
+            self.add_log("Error deserializing payload.", ACCENT_ROSE);
             return;
         };
 
@@ -1189,17 +1191,17 @@ impl MirageApp {
         let target_path = parent.join(format!("restored_{safe_name}"));
 
         if let Err(e) = fs::write(&target_path, &payload.file_data) {
-            self.add_log(format!("Error al guardar: {e}"), ACCENT_ROSE);
-            self.last_action_banner = Some((format!("Error al guardar: {e}"), false));
+            self.add_log(format!("Error saving restored file: {e}"), ACCENT_ROSE);
+            self.last_action_banner = Some((format!("Error saving restored file: {e}"), false));
             return;
         }
 
         self.add_log(
-            format!("Archivo restaurado: {:?} ({})", target_path, format_bytes(payload.file_data.len())),
+            format!("Payload restored: {:?} ({})", target_path, format_bytes(payload.file_data.len())),
             ACCENT_EMERALD,
         );
         self.last_action_banner = Some((
-            format!("Archivo restaurado con exito: {:?} ({})", target_path.file_name().unwrap_or_default(), format_bytes(payload.file_data.len())),
+            format!("Payload restored successfully: {:?} ({})", target_path.file_name().unwrap_or_default(), format_bytes(payload.file_data.len())),
             true,
         ));
     }
@@ -1209,7 +1211,7 @@ impl MirageApp {
 
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "01", "SHAMIR SECRET SHARING 2-DE-3", "Divide cualquier archivo en partes con secreto perfecto en GF(256)");
+            card_header_centered(ui, "01", "SHAMIR SECRET SHARING 2-OF-3", "Split any secret payload into independent mathematical shares over GF(256)");
 
             ui.vertical_centered(|ui| {
                 Frame::none()
@@ -1221,15 +1223,15 @@ impl MirageApp {
                         ui.set_width(inner_width - 32.0);
                         ui.vertical_centered(|ui| {
                             let pick_btn = egui::Button::new(
-                                RichText::new("  SELECCIONAR ARCHIVO A DIVIDIR...  ")
-                                    .font(FontId::proportional(15.0))
+                                RichText::new("  SELECT FILE TO SPLIT...  ")
+                                    .font(FontId::proportional(14.0))
                                     .color(TEXT_HEAD)
                                     .strong(),
                             )
                             .fill(Color32::from_rgb(38, 28, 56))
                             .stroke(Stroke::new(1.2, PURPLE_BRIGHT))
                             .rounding(Rounding::same(12.0))
-                            .min_size(Vec2::new(280.0, 44.0));
+                            .min_size(Vec2::new(260.0, 42.0));
 
                             if ui.add(pick_btn).clicked() {
                                 if let Some(path) = rfd::FileDialog::new().pick_file() {
@@ -1240,24 +1242,24 @@ impl MirageApp {
                             ui.add_space(8.0);
 
                             if let Some(f) = &self.shamir_input_file {
-                                ui.label(RichText::new(format!("● {}", f.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(15.0)).color(ACCENT_EMERALD).strong());
+                                ui.label(RichText::new(format!("[OK] {}", f.file_name().unwrap_or_default().to_string_lossy())).font(FontId::proportional(14.5)).color(ACCENT_EMERALD).strong());
                             } else {
-                                ui.label(RichText::new("Ningun archivo seleccionado").font(FontId::proportional(13.5)).color(TEXT_MUTED));
+                                ui.label(RichText::new("No file selected").font(FontId::proportional(13.0)).color(TEXT_MUTED));
                             }
                         });
                     });
 
                 ui.add_space(14.0);
-                ui.add(egui::Slider::new(&mut self.shamir_threshold, 2..=5).text("Umbral Requerido (K)").text_color(TEXT_HEAD));
+                ui.add(egui::Slider::new(&mut self.shamir_threshold, 2..=5).text("Required Threshold (K)").text_color(TEXT_HEAD));
                 ui.add_space(4.0);
-                ui.add(egui::Slider::new(&mut self.shamir_total, 2..=10).text("Total Fragmentos (N)").text_color(TEXT_HEAD));
+                ui.add(egui::Slider::new(&mut self.shamir_total, 2..=10).text("Total Shares (N)").text_color(TEXT_HEAD));
             });
 
             ui.add_space(18.0);
             let can_split = self.shamir_input_file.is_some();
             ui.add_enabled_ui(can_split, |ui| {
                 let btn = egui::Button::new(
-                    RichText::new("  FRAGMENTAR ARCHIVO  ")
+                    RichText::new("  SPLIT FILE INTO SHARES  ")
                         .font(FontId::proportional(16.0))
                         .color(Color32::WHITE)
                         .strong(),
@@ -1276,9 +1278,9 @@ impl MirageApp {
                                 for (i, s) in shares.iter().enumerate() {
                                     let sp = parent.join(format!("{stem}.part{}.share", i + 1));
                                     fs::write(&sp, s).unwrap();
-                                    self.add_log(format!("Fragmento guardado: {:?}", sp), ACCENT_EMERALD);
+                                    self.add_log(format!("Share saved: {:?}", sp), ACCENT_EMERALD);
                                 }
-                                self.last_action_banner = Some((format!("Se generaron {} fragmentos con exito.", shares.len()), true));
+                                self.last_action_banner = Some((format!("Generated {} shares successfully.", shares.len()), true));
                             }
                         }
                     }
@@ -1292,8 +1294,8 @@ impl MirageApp {
 
         card_frame().show(ui, |ui| {
             ui.set_width(inner_width);
-            card_header_centered(ui, "KAT", "KNOWN ANSWER TESTS — DIAGNOSTICO EN VIVO", "Vectores oficiales de referencia publicados (NIST, RFCs)");
-            ui.label(RichText::new(&self.kat_summary.disclaimer).color(TEXT_MUTED).font(FontId::proportional(13.0)));
+            card_header_centered(ui, "KAT", "KNOWN ANSWER TESTS — LIVE DIAGNOSTICS", "Official published reference test vectors (NIST, RFCs)");
+            ui.label(RichText::new(&self.kat_summary.disclaimer).color(TEXT_MUTED).font(FontId::proportional(12.5)));
             ui.add_space(12.0);
 
             for test in &self.kat_summary.tests {
@@ -1306,13 +1308,13 @@ impl MirageApp {
                         ui.set_width(inner_width - 28.0);
                         ui.horizontal(|ui| {
                             if test.passed {
-                                ui.label(RichText::new(" PASS ").color(Color32::BLACK).background_color(ACCENT_EMERALD).font(FontId::monospace(11.0)).strong());
+                                ui.label(RichText::new(" PASS ").color(Color32::BLACK).background_color(ACCENT_EMERALD).font(FontId::monospace(10.5)).strong());
                             } else {
-                                ui.label(RichText::new(" FAIL ").color(Color32::WHITE).background_color(ACCENT_ROSE).font(FontId::monospace(11.0)).strong());
+                                ui.label(RichText::new(" FAIL ").color(Color32::WHITE).background_color(ACCENT_ROSE).font(FontId::monospace(10.5)).strong());
                             }
-                            ui.label(RichText::new(&test.name).font(FontId::proportional(14.0)).color(TEXT_HEAD).strong());
+                            ui.label(RichText::new(&test.name).font(FontId::proportional(13.5)).color(TEXT_HEAD).strong());
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.label(RichText::new(&test.source).color(TEXT_MUTED).font(FontId::monospace(11.5)));
+                                ui.label(RichText::new(&test.source).color(TEXT_MUTED).font(FontId::monospace(11.0)));
                             });
                         });
                     });
@@ -1321,15 +1323,15 @@ impl MirageApp {
 
             ui.add_space(16.0);
             ui.vertical_centered(|ui| {
-                let retest_btn = egui::Button::new(RichText::new("  RE-EJECUTAR PRUEBAS KAT  ").font(FontId::proportional(14.0)).strong())
+                let retest_btn = egui::Button::new(RichText::new("  RE-RUN KAT DIAGNOSTICS  ").font(FontId::proportional(13.5)).strong())
                     .fill(Color32::from_rgb(32, 24, 48))
                     .stroke(Stroke::new(1.2, PURPLE_BRIGHT))
                     .rounding(Rounding::same(10.0))
-                    .min_size(Vec2::new(260.0, 42.0));
+                    .min_size(Vec2::new(260.0, 40.0));
 
                 if ui.add(retest_btn).clicked() {
                     self.kat_summary = run_known_answer_tests();
-                    self.add_log("Diagnostico KAT actualizado.", PURPLE_BRIGHT);
+                    self.add_log("KAT diagnostics refreshed.", PURPLE_BRIGHT);
                 }
             });
         });
@@ -1354,8 +1356,8 @@ fn main() -> eframe::Result<()> {
     let icon = load_app_icon();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Project Mirage — Armored Cryptosystem (LTS)")
-        .with_inner_size([840.0, 920.0])
-        .with_min_inner_size([580.0, 620.0]);
+        .with_inner_size([800.0, 880.0])
+        .with_min_inner_size([560.0, 600.0]);
 
     if let Some(i) = icon {
         viewport = viewport.with_icon(i);
