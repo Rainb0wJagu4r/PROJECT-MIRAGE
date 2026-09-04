@@ -1,6 +1,7 @@
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "windows" {
+        println!("cargo:rerun-if-changed=../../assets/icon.ico");
         println!("cargo:rerun-if-changed=../../assets/nobug.ico");
         println!("cargo:rerun-if-changed=mirage.rc");
         let out_dir = std::env::var("OUT_DIR").unwrap();

@@ -1389,8 +1389,9 @@ fn register_windows_file_association() {
             .creation_flags(CREATE_NO_WINDOW)
             .status();
 
+        // DefaultIcon points to icon index 1 (nobug.ico for .wraith documents, while index 0 is icon.ico for the application)
         let _ = std::process::Command::new("reg")
-            .args(["add", "HKCU\\Software\\Classes\\ProjectMirage.Wraith\\DefaultIcon", "/ve", "/d", &format!("\"{exe_str}\",0"), "/f"])
+            .args(["add", "HKCU\\Software\\Classes\\ProjectMirage.Wraith\\DefaultIcon", "/ve", "/d", &format!("\"{exe_str}\",1"), "/f"])
             .creation_flags(CREATE_NO_WINDOW)
             .status();
 
